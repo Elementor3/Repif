@@ -131,5 +131,14 @@ return [
     'total_stations' => 'Total stations',
     'total_measurements' => 'Total mesures',
     'total_collections' => 'Total collections',
+    'password_min_length' => 'Le mot de passe doit comporter au moins 6 caractères',
+    'passwords_mismatch' => 'Les mots de passe ne correspondent pas',
+    'already_friends' => 'Vous êtes déjà amis',
+    'request_already_sent' => 'Demande d\'ami déjà envoyée',
+    'user_not_found' => 'Utilisateur introuvable',
+    'no_users_found' => 'Aucun utilisateur trouvé',
+    'no_pending_requests' => 'Aucune demande en attente',
+    'username_taken' => 'Nom d\'utilisateur déjà pris',
+    'email_registered' => 'Email déjà enregistré',
 ];
 ?>

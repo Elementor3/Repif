@@ -24,13 +24,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$username || !$firstName || !$lastName || !$email || !$password) {
         $error = t('error_occurred');
     } elseif ($password !== $confirm) {
-        $error = 'Passwords do not match';
+        $error = t('passwords_mismatch');
     } elseif (strlen($password) < 6) {
-        $error = 'Password must be at least 6 characters';
+        $error = t('password_min_length');
     } elseif (getUserByUsername($conn, $username)) {
-        $error = 'Username already taken';
+        $error = t('username_taken');
     } elseif (getUserByEmail($conn, $email)) {
-        $error = 'Email already registered';
+        $error = t('email_registered');
     } else {
         if (createUser($conn, $username, $firstName, $lastName, $email, $password)) {
             sendEmail($email, t('welcome_subject'), '<p>' . t('welcome_message') . '</p>');

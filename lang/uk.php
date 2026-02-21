@@ -131,5 +131,14 @@ return [
     'total_stations' => 'Всього станцій',
     'total_measurements' => 'Всього вимірів',
     'total_collections' => 'Всього колекцій',
+    'password_min_length' => 'Пароль має містити щонайменше 6 символів',
+    'passwords_mismatch' => 'Паролі не збігаються',
+    'already_friends' => 'Ви вже друзі',
+    'request_already_sent' => 'Запит на дружбу вже надіслано',
+    'user_not_found' => 'Користувача не знайдено',
+    'no_users_found' => 'Користувачів не знайдено',
+    'no_pending_requests' => 'Немає запитів, що очікують',
+    'username_taken' => 'Ім\'я користувача вже зайнято',
+    'email_registered' => 'Email вже зареєстровано',
 ];
 ?>

@@ -36,9 +36,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!password_verify($current, $user['password_hash'])) {
             $err = t('invalid_credentials');
         } elseif (strlen($new) < 6) {
-            $err = 'New password must be at least 6 characters';
+            $err = t('password_min_length');
         } elseif ($new !== $confirm) {
-            $err = 'Passwords do not match';
+            $err = t('passwords_mismatch');
         } else {
             $hash = password_hash($new, PASSWORD_DEFAULT);
             updateUserPassword($conn, $username, $hash);

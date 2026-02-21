@@ -27,9 +27,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $validToken) {
     $newPass = $_POST['password'] ?? '';
     $confirm = $_POST['confirm_password'] ?? '';
     if (!$newPass || strlen($newPass) < 6) {
-        $error = 'Password must be at least 6 characters';
+        $error = t('password_min_length');
     } elseif ($newPass !== $confirm) {
-        $error = 'Passwords do not match';
+        $error = t('passwords_mismatch');
     } else {
         $hash = password_hash($newPass, PASSWORD_DEFAULT);
         updateUserPassword($conn, $resetUser, $hash);

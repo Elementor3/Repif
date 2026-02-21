@@ -16,9 +16,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $receiver = trim($_POST['receiver'] ?? '');
         if ($receiver && $receiver !== $username) {
             if (areFriends($conn, $username, $receiver)) {
-                $err = 'Already friends';
+                $err = t('already_friends');
             } elseif (hasPendingRequest($conn, $username, $receiver)) {
-                $err = 'Request already sent';
+                $err = t('request_already_sent');
             } else {
                 $targetUser = getUserByUsername($conn, $receiver);
                 if ($targetUser) {
@@ -26,7 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     createNotification($conn, $receiver, 'friend_request', t('friend_request_sent'), $_SESSION['full_name'] . ' sent you a friend request', '/user/friends.php');
                     $msg = t('friend_request_sent');
                 } else {
-                    $err = 'User not found';
+                    $err = t('user_not_found');
                 }
             }
         }
@@ -109,7 +109,7 @@ if ($searchQuery) {
                     <?php endforeach; ?>
                 </div>
                 <?php elseif ($searchQuery): ?>
-                <p class="text-muted mt-2">No users found</p>
+                <p class="text-muted mt-2"><?= t('no_users_found') ?></p>
                 <?php endif; ?>
             </div>
         </div>
@@ -159,7 +159,7 @@ if ($searchQuery) {
             <div class="card-header"><h5 class="mb-0"><?= t('pending_requests') ?> (<?= count($pendingRequests) ?>)</h5></div>
             <div class="card-body">
                 <?php if (empty($pendingRequests)): ?>
-                    <p class="text-muted">No pending requests</p>
+                    <p class="text-muted"><?= t('no_pending_requests') ?></p>
                 <?php else: ?>
                 <?php foreach ($pendingRequests as $r): ?>
                 <div class="d-flex align-items-center gap-2 py-2 border-bottom">
