@@ -1,12 +1,11 @@
 <?php
-require_once 'config/database.php';
-require_once 'includes/functions.php';
+require_once __DIR__ . '/config/database.php';
+require_once __DIR__ . '/includes/functions.php';
 
-// Redirect to appropriate page
 if (isLoggedIn()) {
-    header("Location: /user/dashboard.php");
+    header('Location: /user/dashboard.php');
 } else {
-    header("Location: /auth/login.php");
+    header('Location: /auth/login.php');
 }
-exit();
+exit;
 ?>

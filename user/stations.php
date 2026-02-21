@@ -1,175 +1,160 @@
-
 <?php
-require_once '../config/database.php';
-require_once '../includes/functions.php';
-
+require_once __DIR__ . '/../includes/header.php';
 requireLogin();
+require_once __DIR__ . '/../services/stations.php';
 
-// ===================== LOAD DATA ======================
-$stmt = mysqli_prepare(
-    $conn,
-    "SELECT pk_serialNumber, name, description, createdAt, registeredAt
-     FROM station
-     WHERE fk_registeredBy = ?
-     ORDER BY name, pk_serialNumber"
-);
-mysqli_stmt_bind_param($stmt, "s", $_SESSION['username']);
-mysqli_stmt_execute($stmt);
-$stations = mysqli_stmt_get_result($stmt);
+$username = $_SESSION['username'];
+$msg = '';
+$err = '';
 
-$pageTitle = 'My Stations';
-require_once '../includes/header.php';
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = $_POST['action'] ?? '';
+
+    if ($action === 'register') {
+        $serial = trim($_POST['serial'] ?? '');
+        if ($serial) {
+            if (registerStation($conn, $serial, $username)) {
+                $msg = t('success');
+            } else {
+                $err = 'Station not found or already registered';
+            }
+        }
+    } elseif ($action === 'update') {
+        $serial = trim($_POST['serial'] ?? '');
+        $name = trim($_POST['name'] ?? '');
+        $desc = trim($_POST['description'] ?? '');
+        $station = getStationBySerial($conn, $serial);
+        if ($station && $station['fk_registeredBy'] === $username) {
+            if (updateStation($conn, $serial, $name, $desc)) {
+                $msg = t('success');
+            } else {
+                $err = t('error_occurred');
+            }
+        }
+    } elseif ($action === 'unregister') {
+        $serial = trim($_POST['serial'] ?? '');
+        $station = getStationBySerial($conn, $serial);
+        if ($station && $station['fk_registeredBy'] === $username) {
+            unregisterStation($conn, $serial);
+            $msg = t('success');
+        }
+    }
+}
+
+$stations = getUserStationsList($conn, $username);
 ?>
-
-<div class="row">
-    <div class="col-12">
-
-        <h2>My Stations</h2>
-
-        <!-- SUCCESS & ERROR MESSAGES -->
-        <?php if (isset($_GET['registered'])) echo showSuccess("Station registered successfully!"); ?>
-        <?php if (isset($_GET['updated']))    echo showSuccess("Station updated successfully!"); ?>
-        <?php if (isset($_GET['error']))      echo showError(e($_GET['error'])); ?>
-
-
-        <!-- ================= REGISTER NEW STATION ================= -->
-        <div class="card mb-4">
-            <div class="card-header">
-                <h5 class="mb-0">Register New Station</h5>
-            </div>
-            <div class="card-body">
-
-                <form method="POST" action="/api/stations.php" class="row g-3">
-                    <input type="hidden" name="action" value="station.register">
-
-                    <div class="col-md-8">
-                        <label for="serial_number" class="form-label">Station Serial Number</label>
-                        <input type="text" class="form-control" id="serial_number" name="serial_number"
-                               placeholder="e.g., ST001" required>
-                        <small class="text-muted">Enter the serial number from your purchased station.</small>
-                    </div>
-
-                    <div class="col-md-4">
-                        <label class="form-label">&nbsp;</label>
-                        <button type="submit" class="btn btn-primary w-100">
-                            Register Station
-                        </button>
-                    </div>
-                </form>
-
-            </div>
-        </div>
-
-
-        <!-- ================== STATIONS LIST ================== -->
-        <div class="card">
-            <div class="card-header">
-                <h5 class="mb-0">Registered Stations</h5>
-            </div>
-
-            <div class="card-body">
-
-                <?php if (mysqli_num_rows($stations) === 0): ?>
-
-                    <p class="text-muted">You have no registered stations yet. Register one using the form above.</p>
-
-                <?php else: ?>
-
-                    <div class="table-responsive">
-                        <table class="table table-striped align-middle">
-
-                            <thead>
-                                <tr>
-                                    <th>Serial Number</th>
-                                    <th>Name</th>
-                                    <th>Description</th>
-                                    <th>Registered At</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-
-                            <tbody>
-
-                                <?php mysqli_data_seek($stations, 0); ?>
-                                <?php while ($st = mysqli_fetch_assoc($stations)): ?>
-                                    <tr>
-                                        <td><strong><?php echo e($st['pk_serialNumber']); ?></strong></td>
-                                        <td><?php echo e($st['name'] ?: '-'); ?></td>
-                                        <td><?php echo e(substr($st['description'] ?: '-', 0, 50)); ?></td>
-                                        <td><?php echo formatDateTime($st['registeredAt']); ?></td>
-                                        <td class="table-actions">
-
-                                            <!-- Edit button -->
-                                            <button class="btn btn-sm btn-primary"
-                                                    data-bs-toggle="modal"
-                                                    data-bs-target="#editStation_<?php echo e($st['pk_serialNumber']); ?>">
-                                                Edit
-                                            </button>
-
-                                        </td>
-                                    </tr>
-                                <?php endwhile; ?>
-
-                            </tbody>
-                        </table>
-                    </div>
-
-                <?php endif; ?>
-
-            </div>
-        </div>
-
-    </div>
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="mb-0"><i class="bi bi-broadcast-pin me-2"></i><?= t('stations') ?></h2>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#registerModal">
+        <i class="bi bi-plus-circle me-1"></i><?= t('register_station') ?>
+    </button>
 </div>
 
+<?php if ($msg): ?><?= showSuccess($msg) ?><?php endif; ?>
+<?php if ($err): ?><?= showError($err) ?><?php endif; ?>
 
-<!-- ============================================================= -->
-<!-- =================== MODALS (OUTSIDE TABLE) =================== -->
-<!-- ============================================================= -->
+<?php if (empty($stations)): ?>
+    <div class="alert alert-info"><?= t('no_stations') ?></div>
+<?php else: ?>
+<div class="table-responsive">
+    <table class="table table-hover align-middle">
+        <thead>
+            <tr>
+                <th><?= t('station_serial') ?></th>
+                <th><?= t('name') ?></th>
+                <th><?= t('description') ?></th>
+                <th><?= t('registered_at') ?></th>
+                <th><?= t('actions') ?></th>
+            </tr>
+        </thead>
+        <tbody>
+        <?php foreach ($stations as $st): ?>
+        <tr>
+            <td><code><?= e($st['pk_serialNumber']) ?></code></td>
+            <td><?= e($st['name'] ?? '') ?></td>
+            <td><?= e($st['description'] ?? '') ?></td>
+            <td><?= formatDateTime($st['registeredAt'] ?? null) ?></td>
+            <td>
+                <button class="btn btn-sm btn-outline-primary" onclick="editStation(<?= htmlspecialchars(json_encode($st['pk_serialNumber']), ENT_QUOTES) ?>,<?= htmlspecialchars(json_encode($st['name'] ?? ''), ENT_QUOTES) ?>,<?= htmlspecialchars(json_encode($st['description'] ?? ''), ENT_QUOTES) ?>)">
+                    <i class="bi bi-pencil"></i>
+                </button>
+                <a href="/user/measurements.php?station=<?= urlencode($st['pk_serialNumber']) ?>" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-graph-up"></i>
+                </a>
+                <form method="post" class="d-inline" onsubmit="return confirm('<?= t('confirm_delete') ?>')">
+                    <input type="hidden" name="action" value="unregister">
+                    <input type="hidden" name="serial" value="<?= e($st['pk_serialNumber']) ?>">
+                    <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-x-circle"></i></button>
+                </form>
+            </td>
+        </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+</div>
+<?php endif; ?>
 
-<?php mysqli_data_seek($stations, 0); ?>
-<?php while ($st = mysqli_fetch_assoc($stations)): ?>
-
-<div class="modal fade" id="editStation_<?php echo e($st['pk_serialNumber']); ?>" tabindex="-1"
-     aria-labelledby="editStationLabel_<?php echo e($st['pk_serialNumber']); ?>" aria-hidden="true">
-  <div class="modal-dialog">
-    <div class="modal-content">
-
-        <form method="POST" action="/api/stations.php">
-            <input type="hidden" name="action" value="station.update">
-            <input type="hidden" name="serial_number" value="<?php echo e($st['pk_serialNumber']); ?>">
-
+<!-- Register Modal -->
+<div class="modal fade" id="registerModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="editStationLabel_<?php echo e($st['pk_serialNumber']); ?>">
-                    Edit Station #<?php echo e($st['pk_serialNumber']); ?>
-                </h5>
+                <h5 class="modal-title"><?= t('register_station') ?></h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-
-            <div class="modal-body">
-                <div class="mb-3">
-                    <label class="form-label">Name</label>
-                    <input class="form-control" name="name" value="<?php echo e($st['name']); ?>">
+            <form method="post">
+                <input type="hidden" name="action" value="register">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label"><?= t('station_serial') ?></label>
+                        <input type="text" name="serial" class="form-control" required placeholder="e.g. SN-001">
+                    </div>
                 </div>
-
-                <div class="mb-3">
-                    <label class="form-label">Description</label>
-                    <textarea class="form-control" name="description" rows="3"><?php echo e($st['description']); ?></textarea>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><?= t('cancel') ?></button>
+                    <button type="submit" class="btn btn-primary"><?= t('register_station') ?></button>
                 </div>
-            </div>
-
-            <div class="modal-footer">
-                <button class="btn btn-primary" type="submit">Save Changes</button>
-                <button class="btn btn-secondary" type="button" data-bs-dismiss="modal">Cancel</button>
-            </div>
-
-        </form>
-
+            </form>
+        </div>
     </div>
-  </div>
 </div>
 
-<?php endwhile; ?>
+<!-- Edit Modal -->
+<div class="modal fade" id="editModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><?= t('edit') ?> <?= t('station') ?></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post">
+                <input type="hidden" name="action" value="update">
+                <input type="hidden" name="serial" id="editSerial">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label"><?= t('name') ?></label>
+                        <input type="text" name="name" id="editName" class="form-control">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label"><?= t('description') ?></label>
+                        <textarea name="description" id="editDesc" class="form-control" rows="3"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><?= t('cancel') ?></button>
+                    <button type="submit" class="btn btn-primary"><?= t('save') ?></button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 
-
-<?php require_once '../includes/footer.php'; ?>
+<script>
+function editStation(serial, name, desc) {
+    document.getElementById('editSerial').value = serial;
+    document.getElementById('editName').value = name;
+    document.getElementById('editDesc').value = desc;
+    new bootstrap.Modal(document.getElementById('editModal')).show();
+}
+</script>
+<?php require_once __DIR__ . '/../includes/footer.php'; ?>

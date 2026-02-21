@@ -1,114 +1,111 @@
 <?php
-require_once '../config/database.php';
-require_once '../includes/functions.php';
-
+require_once __DIR__ . '/../includes/header.php';
 requireLogin();
+require_once __DIR__ . '/../services/stations.php';
+require_once __DIR__ . '/../services/measurements.php';
+require_once __DIR__ . '/../services/collections.php';
+require_once __DIR__ . '/../services/friends.php';
 
-$pageTitle = 'Dashboard';
-require_once '../includes/header.php';
+$username = $_SESSION['username'];
+
+// Stats
+$myStations = getUserStationsList($conn, $username);
+$myCollections = getUserCollections($conn, $username);
+$myFriends = getFriends($conn, $username);
+
+$totalMeasurements = 0;
+foreach ($myStations as $st) {
+    $totalMeasurements += countMeasurements($conn, ['station' => $st['pk_serialNumber']]);
+}
+
+// Get latest measurement per station
+$stationData = [];
+foreach ($myStations as $st) {
+    $latest = getLatestMeasurementByStation($conn, $st['pk_serialNumber']);
+    $stationData[] = ['station' => $st, 'latest' => $latest];
+}
 ?>
+<h2 class="mb-4"><i class="bi bi-speedometer2 me-2"></i><?= t('dashboard') ?></h2>
 
-<div class="row">
-    <div class="col-12">
-        <h1>Welcome, <?php echo htmlspecialchars($_SESSION['full_name']); ?>!</h1>
-        <p class="lead">You are logged in as <strong><?php echo htmlspecialchars($_SESSION['username']); ?></strong></p>
-        
-        <?php if (isAdmin()): ?>
-            <div class="alert alert-info">
-                <strong>Administrator Access:</strong> You have full system access. Visit the <a href="/admin/panel.php">Admin Panel</a> to manage all users and stations.
-            </div>
-        <?php endif; ?>
-        
-        <div class="row mt-4" id="stats-cards">
-            <!-- Stats will be loaded via AJAX -->
-            <div class="col-md-4">
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="card-title">My Stations</h5>
-                        <p class="card-text" id="stations-count">Loading...</p>
-                        <a href="stations.php" class="btn btn-primary">View Stations</a>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="col-md-4">
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="card-title">Collections</h5>
-                        <p class="card-text" id="collections-count">Loading...</p>
-                        <a href="collections.php" class="btn btn-primary">View Collections</a>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="col-md-4">
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="card-title">Friends</h5>
-                        <p class="card-text" id="friends-count">Loading...</p>
-                        <a href="friends.php" class="btn btn-secondary">Manage Friends</a>
-                    </div>
-                </div>
-            </div>
+<!-- Stats row -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+        <div class="card stat-card text-center p-3">
+            <div class="stat-value text-primary"><?= count($myStations) ?></div>
+            <div class="stat-label"><?= t('stations_count') ?></div>
         </div>
-        
-        <div class="row mt-3">
-            <div class="col-md-4">
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="card-title">Shared Collections</h5>
-                        <p class="card-text">View collections shared with you by friends.</p>
-                        <a href="shared.php" class="btn btn-secondary">View Shared</a>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="col-md-4">
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="card-title">Measurements</h5>
-                        <p class="card-text">View and filter measurement data from your stations.</p>
-                        <a href="measurements.php" class="btn btn-secondary">View Data</a>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="col-md-4">
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="card-title">Profile</h5>
-                        <p class="card-text">Update your account information.</p>
-                        <a href="profile.php" class="btn btn-secondary">Edit Profile</a>
-                    </div>
-                </div>
-            </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card stat-card text-center p-3">
+            <div class="stat-value text-success"><?= $totalMeasurements ?></div>
+            <div class="stat-label"><?= t('measurements') ?></div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card stat-card text-center p-3">
+            <div class="stat-value text-info"><?= count($myCollections) ?></div>
+            <div class="stat-label"><?= t('collections_count') ?></div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card stat-card text-center p-3">
+            <div class="stat-value text-warning"><?= count($myFriends) ?></div>
+            <div class="stat-label"><?= t('friends_count') ?></div>
         </div>
     </div>
 </div>
 
-<script>
-$(document).ready(function() {
-    loadStats();
-});
+<?php if (empty($myStations)): ?>
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle me-2"></i>
+        <?= t('no_stations') ?>. <a href="/user/stations.php"><?= t('register_station') ?></a>
+    </div>
+<?php else: ?>
+<h5 class="mb-3"><?= t('latest_measurement') ?></h5>
+<div class="row g-3">
+    <?php foreach ($stationData as $sd): ?>
+    <div class="col-md-6 col-lg-4">
+        <div class="card station-card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span class="fw-semibold"><i class="bi bi-broadcast-pin me-1"></i><?= e($sd['station']['name'] ?? $sd['station']['pk_serialNumber']) ?></span>
+                <small class="text-muted"><?= e($sd['station']['pk_serialNumber']) ?></small>
+            </div>
+            <div class="card-body">
+                <?php if ($sd['latest']): ?>
+                <div class="row g-2 text-center">
+                    <div class="col-6">
+                        <div class="sensor-value text-danger"><?= $sd['latest']['temperature'] !== null ? e($sd['latest']['temperature']) . '°C' : '-' ?></div>
+                        <div class="sensor-label"><?= t('temperature') ?></div>
+                    </div>
+                    <div class="col-6">
+                        <div class="sensor-value text-primary"><?= $sd['latest']['humidity'] !== null ? e($sd['latest']['humidity']) . '%' : '-' ?></div>
+                        <div class="sensor-label"><?= t('humidity') ?></div>
+                    </div>
+                    <div class="col-6">
+                        <div class="sensor-value text-success"><?= $sd['latest']['airPressure'] !== null ? e($sd['latest']['airPressure']) . ' hPa' : '-' ?></div>
+                        <div class="sensor-label"><?= t('air_pressure') ?></div>
+                    </div>
+                    <div class="col-6">
+                        <div class="sensor-value text-warning"><?= $sd['latest']['lightIntensity'] !== null ? e($sd['latest']['lightIntensity']) . ' lux' : '-' ?></div>
+                        <div class="sensor-label"><?= t('light_intensity') ?></div>
+                    </div>
+                </div>
+                <div class="text-center mt-2">
+                    <small class="text-muted"><?= formatDateTime($sd['latest']['timestamp']) ?></small>
+                </div>
+                <?php else: ?>
+                <p class="text-muted text-center"><?= t('no_data') ?></p>
+                <?php endif; ?>
+            </div>
+            <div class="card-footer text-center">
+                <a href="/user/measurements.php?station=<?= urlencode($sd['station']['pk_serialNumber']) ?>" class="btn btn-sm btn-outline-primary">
+                    <i class="bi bi-graph-up me-1"></i><?= t('measurements') ?>
+                </a>
+            </div>
+        </div>
+    </div>
+    <?php endforeach; ?>
+</div>
+<?php endif; ?>
 
-function loadStats() {
-    $.get('/api/dashboard.php?action=get_stats', function(response) {
-        var parts = response.split('|');
-        if (parts.length === 3) {
-            $('#stations-count').text(parts[0] + ' registered stations');
-            $('#collections-count').text(parts[1] + ' collections');
-            $('#friends-count').text(parts[2] + ' friends');
-        } else {
-            $('#stations-count').text('Error loading');
-            $('#collections-count').text('Error loading');
-            $('#friends-count').text('Error loading');
-        }
-    }).fail(function() {
-        $('#stations-count').text('Error loading');
-        $('#collections-count').text('Error loading');
-        $('#friends-count').text('Error loading');
-    });
-}
-</script>
-
-<?php require_once '../includes/footer.php'; ?>
+<?php require_once __DIR__ . '/../includes/footer.php'; ?>

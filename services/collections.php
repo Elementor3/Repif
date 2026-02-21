@@ -1,139 +1,97 @@
-
 <?php
-
-function svc_userCreateCollection(mysqli $conn, string $owner, string $name, string $station, string $start, string $end, ?string $desc, bool $ignoreOwner): int {
-    if ($name === '' || $station === '' || $start === '' || $end === '') {
-        throw new RuntimeException('All required fields must be provided.');
-    }
-
-    $stmt = mysqli_prepare($conn, "SELECT 1 FROM collection WHERE fk_user=? AND name=? LIMIT 1");
-    mysqli_stmt_bind_param($stmt, "ss", $owner, $name);
-    mysqli_stmt_execute($stmt);
-    $dup = mysqli_stmt_get_result($stmt);
-    if (mysqli_num_rows($dup) > 0) {
-        throw new RuntimeException('A collection with this name already exists.');
-    }
-
-    if (!$ignoreOwner) {
-        $stmt = mysqli_prepare($conn,
-            "SELECT 1 FROM station
-            WHERE pk_serialNumber=? AND fk_registeredBy=?
-            LIMIT 1"
-        );
-        mysqli_stmt_bind_param($stmt, "ss", $station, $owner);
-    } else {
-        $stmt = mysqli_prepare($conn,
-            "SELECT 1 FROM station
-            WHERE pk_serialNumber=?
-            LIMIT 1"
-        );
-        mysqli_stmt_bind_param($stmt, "s", $station);
-    }
-
-    mysqli_stmt_execute($stmt);
-    $rs = mysqli_stmt_get_result($stmt);
-    if (mysqli_num_rows($rs) === 0) {
-        throw new RuntimeException('You do not have access to this station.');
-    }
-
-    $createdAt = date('Y-m-d H:i:s');
-    $stmt = mysqli_prepare($conn, "INSERT INTO collection (name,description,fk_user,createdAt) VALUES (?,?,?,?)");
-    mysqli_stmt_bind_param($stmt, "ssss", $name, $desc, $owner, $createdAt);
-    mysqli_stmt_execute($stmt);
-    $id = mysqli_insert_id($conn);
-
-    $startDT = (new DateTime($start))->format('Y-m-d H:i:s');
-    $endDT   = (new DateTime($end))->format('Y-m-d H:i:s');
-
-    $stmt = mysqli_prepare($conn,
-        "SELECT pk_measurementID FROM measurement
-         WHERE fk_station=? AND timestamp>=? AND timestamp<=?");
-    mysqli_stmt_bind_param($stmt, "sss", $station, $startDT, $endDT);
-    mysqli_stmt_execute($stmt);
-    $rows = mysqli_stmt_get_result($stmt);
-
-    $ins = mysqli_prepare($conn, "INSERT INTO contains (pkfk_measurement, pkfk_collection) VALUES (?,?)");
-    while ($m = mysqli_fetch_assoc($rows)) {
-        $mid = (int)$m['pk_measurementID'];
-        mysqli_stmt_bind_param($ins, "ii", $mid, $id);
-        mysqli_stmt_execute($ins);
-    }
-
-    return $id;
+function getUserCollections(mysqli $conn, string $username): array {
+    $stmt = $conn->prepare("SELECT * FROM collection WHERE fk_user = ? ORDER BY createdAt DESC");
+    $stmt->bind_param("s", $username);
+    $stmt->execute();
+    return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 }
 
-function svc_userEditCollection(mysqli $conn, string $owner, int $id, string $name, ?string $desc): bool {
-    if ($name === '') throw new RuntimeException('New collection name is required.');
-
-    $stmt = mysqli_prepare($conn,
-        "SELECT 1 FROM collection WHERE fk_user=? AND name=? AND pk_collectionID<>? LIMIT 1");
-    mysqli_stmt_bind_param($stmt, "ssi", $owner, $name, $id);
-    mysqli_stmt_execute($stmt);
-    $dup = mysqli_stmt_get_result($stmt);
-    if (mysqli_num_rows($dup) > 0) {
-        throw new RuntimeException('A collection with this name already exists.');
-    }
-
-    $stmt = mysqli_prepare($conn, "UPDATE collection SET name=?, description=? WHERE pk_collectionID=? AND fk_user=?");
-    mysqli_stmt_bind_param($stmt, "ssis", $name, $desc, $id, $owner);
-    return mysqli_stmt_execute($stmt) === true;
+function getCollectionById(mysqli $conn, int $id): ?array {
+    $stmt = $conn->prepare("SELECT * FROM collection WHERE pk_collectionID = ?");
+    $stmt->bind_param("i", $id);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    return $row ?: null;
 }
 
-function svc_userDeleteCollection(mysqli $conn, string $owner, int $id): bool {
-    $stmt = mysqli_prepare($conn, "DELETE FROM collection WHERE pk_collectionID=? AND fk_user=?");
-    mysqli_stmt_bind_param($stmt, "is", $id, $owner);
-    return mysqli_stmt_execute($stmt) === true;
+function createCollection(mysqli $conn, string $username, string $name, string $description): int {
+    $now = date('Y-m-d H:i:s');
+    $stmt = $conn->prepare("INSERT INTO collection (name, description, fk_user, createdAt) VALUES (?,?,?,?)");
+    $stmt->bind_param("ssss", $name, $description, $username, $now);
+    if (!$stmt->execute()) return 0;
+    return (int)$conn->insert_id;
 }
 
-function svc_userShareCollection(mysqli $conn, string $owner, int $id, string $friend): bool {
-    if ($friend === '') throw new RuntimeException('Friend is required.');
-
-    $stmt = mysqli_prepare($conn,
-      "SELECT 1 FROM friendship
-       WHERE (pk_user1=? AND pk_user2=?) OR (pk_user1=? AND pk_user2=?)");
-    mysqli_stmt_bind_param($stmt, "ssss", $owner, $friend, $friend, $owner);
-    mysqli_stmt_execute($stmt);
-    $rs = mysqli_stmt_get_result($stmt);
-    if (mysqli_num_rows($rs) === 0) {
-        throw new RuntimeException('You can only share with friends.');
-    }
-
-    $stmt = mysqli_prepare($conn, "SELECT 1 FROM shares WHERE pk_user=? AND pk_collection=?");
-    mysqli_stmt_bind_param($stmt, "si", $friend, $id);
-    mysqli_stmt_execute($stmt);
-    $dup = mysqli_stmt_get_result($stmt);
-    if (mysqli_num_rows($dup) > 0) {
-        return true;
-    }
-
-    $stmt = mysqli_prepare($conn, "INSERT INTO shares (pk_user,pk_collection) VALUES (?,?)");
-    mysqli_stmt_bind_param($stmt, "si", $friend, $id);
-    return mysqli_stmt_execute($stmt) === true;
+function updateCollection(mysqli $conn, int $id, string $name, string $description): bool {
+    $stmt = $conn->prepare("UPDATE collection SET name=?, description=? WHERE pk_collectionID=?");
+    $stmt->bind_param("ssi", $name, $description, $id);
+    return $stmt->execute();
 }
 
-function svc_userUnshareCollection(mysqli $conn, string $owner, int $id, string $friend): bool {
-    $stmt = mysqli_prepare($conn, "DELETE FROM shares WHERE pk_user=? AND pk_collection=?");
-    mysqli_stmt_bind_param($stmt, "si", $friend, $id);
-    return mysqli_stmt_execute($stmt) === true;
+function deleteCollection(mysqli $conn, int $id): bool {
+    $stmt = $conn->prepare("DELETE FROM collection WHERE pk_collectionID=?");
+    $stmt->bind_param("i", $id);
+    return $stmt->execute();
 }
 
-
-/* ---- ADMIN ---- */
-
-function svc_adminEditCollection(mysqli $conn, int $id, string $name, ?string $desc): bool {
-    if ($name === '') throw new RuntimeException('Name is required.');
-
-    $stmt = mysqli_prepare($conn, "UPDATE collection SET name=?, description=? WHERE pk_collectionID=?");
-    mysqli_stmt_bind_param($stmt, "ssi", $name, $desc, $id);
-    return mysqli_stmt_execute($stmt) === true;
+function addSample(mysqli $conn, int $collectionId, string $station, string $start, string $end): bool {
+    $stmt = $conn->prepare("INSERT INTO sample (fk_collection, fk_station, startDateTime, endDateTime) VALUES (?,?,?,?)");
+    $stmt->bind_param("isss", $collectionId, $station, $start, $end);
+    if (!$stmt->execute()) return false;
+    $stmt2 = $conn->prepare("INSERT IGNORE INTO contains (pkfk_measurement, pkfk_collection) SELECT pk_measurementID, ? FROM measurement WHERE fk_station = ? AND timestamp BETWEEN ? AND ?");
+    $stmt2->bind_param("isss", $collectionId, $station, $start, $end);
+    return $stmt2->execute();
 }
 
-function svc_adminDeleteCollection(mysqli $conn, int $id): bool {
-    $stmt = mysqli_prepare($conn, "DELETE FROM collection WHERE pk_collectionID=?");
-    mysqli_stmt_bind_param($stmt, "i", $id);
-    return mysqli_stmt_execute($stmt) === true;
+function removeSample(mysqli $conn, int $sampleId): bool {
+    $stmt = $conn->prepare("DELETE FROM sample WHERE pk_sampleID=?");
+    $stmt->bind_param("i", $sampleId);
+    return $stmt->execute();
 }
 
-function svc_adminCreateCollection(mysqli $conn, string $adminUser, string $name, string $station, string $start, string $end, ?string $desc): int {
-    return svc_userCreateCollection($conn, $adminUser, $name, $station, $start, $end, $desc, true);
+function getSamples(mysqli $conn, int $collectionId): array {
+    $stmt = $conn->prepare("SELECT s.*, st.name AS station_name FROM sample s LEFT JOIN station st ON s.fk_station = st.pk_serialNumber WHERE s.fk_collection = ?");
+    $stmt->bind_param("i", $collectionId);
+    $stmt->execute();
+    return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 }
+
+function getCollectionMeasurements(mysqli $conn, int $collectionId): array {
+    $stmt = $conn->prepare("SELECT m.*, s.name AS station_name FROM measurement m JOIN contains c ON m.pk_measurementID = c.pkfk_measurement LEFT JOIN station s ON m.fk_station = s.pk_serialNumber WHERE c.pkfk_collection = ? ORDER BY m.timestamp DESC");
+    $stmt->bind_param("i", $collectionId);
+    $stmt->execute();
+    return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+}
+
+function shareCollection(mysqli $conn, int $collectionId, string $withUsername): bool {
+    $stmt = $conn->prepare("INSERT IGNORE INTO shares (pk_user, pk_collection) VALUES (?,?)");
+    $stmt->bind_param("si", $withUsername, $collectionId);
+    return $stmt->execute();
+}
+
+function unshareCollection(mysqli $conn, int $collectionId, string $username): bool {
+    $stmt = $conn->prepare("DELETE FROM shares WHERE pk_user=? AND pk_collection=?");
+    $stmt->bind_param("si", $username, $collectionId);
+    return $stmt->execute();
+}
+
+function getSharedCollections(mysqli $conn, string $username): array {
+    $stmt = $conn->prepare("SELECT c.*, u.firstName, u.lastName, u.pk_username AS owner_username FROM collection c JOIN shares s ON c.pk_collectionID = s.pk_collection JOIN user u ON c.fk_user = u.pk_username WHERE s.pk_user = ?");
+    $stmt->bind_param("s", $username);
+    $stmt->execute();
+    return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+}
+
+function getCollectionShares(mysqli $conn, int $collectionId): array {
+    $stmt = $conn->prepare("SELECT u.pk_username, u.firstName, u.lastName FROM shares s JOIN user u ON s.pk_user = u.pk_username WHERE s.pk_collection = ?");
+    $stmt->bind_param("i", $collectionId);
+    $stmt->execute();
+    return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+}
+
+function unshareAllBetweenUsers(mysqli $conn, string $user1, string $user2): bool {
+    $stmt = $conn->prepare("DELETE s FROM shares s JOIN collection c ON s.pk_collection = c.pk_collectionID WHERE (c.fk_user = ? AND s.pk_user = ?) OR (c.fk_user = ? AND s.pk_user = ?)");
+    $stmt->bind_param("ssss", $user1, $user2, $user2, $user1);
+    return $stmt->execute();
+}
+?>

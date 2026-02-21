@@ -1,92 +1,75 @@
 <?php
-// /includes/functions.php
-/*
- * Common functions for the application
- */
-
-// Check if user is logged in
-function isLoggedIn() {
-    return isset($_SESSION['user_id']);
+function isLoggedIn(): bool {
+    return isset($_SESSION['username']);
 }
 
-// Check if user is admin
-function isAdmin() {
+function isAdmin(): bool {
     return isset($_SESSION['is_admin']) && $_SESSION['is_admin'] === true;
 }
-// Redirect to login if not logged in
-function requireLogin() {
+
+function requireLogin(): void {
     if (!isLoggedIn()) {
-        header("Location: /auth/login.php");
-        exit();
+        header('Location: /auth/login.php');
+        exit;
     }
 }
 
-// Redirect to dashboard if not admin
-function requireAdmin() {
+function requireAdmin(): void {
     requireLogin();
     if (!isAdmin()) {
-        header("Location: /user/dashboard.php");
-        exit();
+        header('Location: /user/dashboard.php');
+        exit;
     }
 }
 
-// Format datetime for display (DD.MM.YYYY HH:MM)
-function formatDateTime($datetime) {
-    if (!$datetime) return '';
-    $dt = new DateTime($datetime);
-    return $dt->format('d.m.Y H:i');
+function formatDateTime(?string $datetime): string {
+    if (!$datetime) return '-';
+    return date('Y-m-d H:i', strtotime($datetime));
 }
 
-// Convert datetime-local input to MySQL datetime
-function convertToMySQLDateTime($datetimeLocal) {
-    if (!$datetimeLocal) return null;
-    $dt = new DateTime($datetimeLocal);
+function convertToMySQLDateTime(string $input): string {
+    $dt = DateTime::createFromFormat('Y-m-d\TH:i', $input);
+    if (!$dt) $dt = new DateTime($input);
     return $dt->format('Y-m-d H:i:s');
 }
 
-// Sanitize output
-function e($string) {
-    return htmlspecialchars($string, ENT_QUOTES, 'UTF-8');
+function e(mixed $value): string {
+    return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
 }
 
-// Display success message
-function showSuccess($message) {
-    return '<div class="alert alert-success alert-dismissible fade show" role="alert">' 
-           . e($message) 
-           . '<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
+function showSuccess(string $message): string {
+    return '<div class="alert alert-success alert-dismissible fade show auto-dismiss" role="alert">'
+        . e($message)
+        . '<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
 }
 
-// Display error message
-function showError($message) {
-    return '<div class="alert alert-danger alert-dismissible fade show" role="alert">' 
-           . e($message) 
-           . '<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
+function showError(string $message): string {
+    return '<div class="alert alert-danger alert-dismissible fade show auto-dismiss" role="alert">'
+        . e($message)
+        . '<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
 }
 
-// Check if two users are friends
-function areFriends($conn, $user1, $user2) {
-    $stmt = mysqli_prepare($conn, 
-        "SELECT 1 FROM friendship 
-         WHERE (pk_user1 = ? AND pk_user2 = ?) 
-         OR (pk_user1 = ? AND pk_user2 = ?) 
-         LIMIT 1"
-    );
-    mysqli_stmt_bind_param($stmt, "ssss", $user1, $user2, $user2, $user1);
-    mysqli_stmt_execute($stmt);
-    $result = mysqli_stmt_get_result($stmt);
-    return mysqli_num_rows($result) > 0;
+function areFriends(mysqli $conn, string $user1, string $user2): bool {
+    $a = min($user1, $user2);
+    $b = max($user1, $user2);
+    $stmt = $conn->prepare("SELECT 1 FROM friendship WHERE pk_user1 = ? AND pk_user2 = ?");
+    $stmt->bind_param("ss", $a, $b);
+    $stmt->execute();
+    return $stmt->get_result()->num_rows > 0;
 }
 
-// Get user's stations
-function getUserStations($conn, $username) {
-    $stmt = mysqli_prepare($conn, 
-        "SELECT pk_serialNumber, name, description 
-         FROM station 
-         WHERE fk_registeredBy = ? 
-         ORDER BY name"
-    );
-    mysqli_stmt_bind_param($stmt, "s", $username);
-    mysqli_stmt_execute($stmt);
-    return mysqli_stmt_get_result($stmt);
+function getUserStations(mysqli $conn, string $username): array {
+    $stmt = $conn->prepare("SELECT * FROM station WHERE fk_registeredBy = ?");
+    $stmt->bind_param("s", $username);
+    $stmt->execute();
+    return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+}
+
+function getUnreadNotificationCount(mysqli $conn, string $username): int {
+    $stmt = $conn->prepare("SELECT COUNT(*) AS cnt FROM notification WHERE fk_user = ? AND is_read = 0");
+    $stmt->bind_param("s", $username);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    return (int)($row['cnt'] ?? 0);
 }
 ?>

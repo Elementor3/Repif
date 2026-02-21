@@ -1,139 +1,110 @@
 <?php
-require_once '../config/database.php';
-require_once '../includes/functions.php';
+require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/i18n.php';
+require_once __DIR__ . '/../includes/mailer.php';
+require_once __DIR__ . '/../services/users.php';
 
-// Redirect if already logged in
 if (isLoggedIn()) {
-    header("Location: /user/dashboard.php");
-    exit();
+    header('Location: /user/dashboard.php');
+    exit;
 }
 
 $error = '';
 $success = '';
 
-// Process registration
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = trim($_POST['username'] ?? '');
-    $firstName = trim($_POST['firstname'] ?? '');
-    $lastName = trim($_POST['lastname'] ?? '');
+    $firstName = trim($_POST['firstName'] ?? '');
+    $lastName = trim($_POST['lastName'] ?? '');
     $email = trim($_POST['email'] ?? '');
     $password = $_POST['password'] ?? '';
-    $confirmPassword = $_POST['confirm_password'] ?? '';
-    
-    // Validation
-    if (empty($username) || empty($firstName) || empty($lastName) || empty($email) || empty($password)) {
-        $error = 'All fields are required.';
-    } elseif ($password !== $confirmPassword) {
-        $error = 'Passwords do not match.';
-    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $error = 'Invalid email format.';
-    } else {
-        // Check if username already exists
-        $stmt = mysqli_prepare($conn, "SELECT pk_username FROM user WHERE pk_username = ?");
-        mysqli_stmt_bind_param($stmt, "s", $username);
-        mysqli_stmt_execute($stmt);
-        $result = mysqli_stmt_get_result($stmt);
-        
-        if (mysqli_num_rows($result) > 0) {
-            $error = 'Username already exists.';
-        } else {
-            // Check if email already exists
-            $stmt = mysqli_prepare($conn, "SELECT pk_username FROM user WHERE email = ?");
-            mysqli_stmt_bind_param($stmt, "s", $email);
-            mysqli_stmt_execute($stmt);
-            $result = mysqli_stmt_get_result($stmt);
-            
-            if (mysqli_num_rows($result) > 0) {
-                $error = 'Email already registered.';
-            } else {
-                // Create new user
-                $passwordHash = password_hash($password, PASSWORD_DEFAULT);
-                $createdAt = date('Y-m-d H:i:s');
-                
-                $stmt = mysqli_prepare($conn, 
-                    "INSERT INTO user (pk_username, firstName, lastName, email, password_hash, role, createdAt) 
-                        VALUES (?, ?, ?, ?, ?, 'User', ?)"
-                );
-                mysqli_stmt_bind_param($stmt, "ssssss", $username, $firstName, $lastName, $email, $passwordHash, $createdAt);
+    $confirm = $_POST['confirm_password'] ?? '';
 
-                if (mysqli_stmt_execute($stmt)) {
-                    $success = 'Registration successful! You can now login.';
-                    // Auto-redirect after 2 seconds
-                    header("refresh:2;url=login.php");
-                } else {
-                    $error = 'Registration failed. Please try again.';
-                }
-            }
+    if (!$username || !$firstName || !$lastName || !$email || !$password) {
+        $error = t('error_occurred');
+    } elseif ($password !== $confirm) {
+        $error = t('passwords_mismatch');
+    } elseif (strlen($password) < 6) {
+        $error = t('password_min_length');
+    } elseif (getUserByUsername($conn, $username)) {
+        $error = t('username_taken');
+    } elseif (getUserByEmail($conn, $email)) {
+        $error = t('email_registered');
+    } else {
+        if (createUser($conn, $username, $firstName, $lastName, $email, $password)) {
+            sendEmail($email, t('welcome_subject'), '<p>' . t('welcome_message') . '</p>');
+            $success = t('register_success');
+        } else {
+            $error = t('error_occurred');
         }
     }
 }
-
-$pageTitle = 'Register';
-require_once '../includes/header.php';
 ?>
-
-<div class="row justify-content-center mt-6">
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header">
-                <h3 class="mb-0">Register New Account</h3>
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><?= t('register') ?> - WeatherStation</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.min.css">
+    <link rel="stylesheet" href="/assets/css/style.css">
+</head>
+<body class="bg-light">
+<div class="container">
+    <div class="row justify-content-center mt-5">
+        <div class="col-md-6 col-lg-5">
+            <div class="text-center mb-4">
+                <h2 class="fw-bold"><i class="bi bi-cloud-sun-fill text-primary"></i> WeatherStation</h2>
             </div>
-            <div class="card-body">
-                <?php if ($error): ?>
-                    <?php echo showError($error); ?>
-                <?php endif; ?>
-                
-                <?php if ($success): ?>
-                    <?php echo showSuccess($success); ?>
-                <?php endif; ?>
-                
-                <form method="POST" action="">
-                    <div class="mb-3">
-                        <label for="username" class="form-label">Username *</label>
-                        <input type="text" class="form-control" id="username" name="username" 
-                               value="<?php echo e($_POST['username'] ?? ''); ?>" required autofocus>
-                        <small class="text-muted">This will be your login name</small>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="firstname" class="form-label">First Name *</label>
-                        <input type="text" class="form-control" id="firstname" name="firstname" 
-                               value="<?php echo e($_POST['firstname'] ?? ''); ?>" required>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="lastname" class="form-label">Last Name *</label>
-                        <input type="text" class="form-control" id="lastname" name="lastname" 
-                               value="<?php echo e($_POST['lastname'] ?? ''); ?>" required>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="email" class="form-label">Email *</label>
-                        <input type="email" class="form-control" id="email" name="email" 
-                               value="<?php echo e($_POST['email'] ?? ''); ?>" required>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="password" class="form-label">Password *</label>
-                        <input type="password" class="form-control" id="password" name="password" required>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="confirm_password" class="form-label">Confirm Password *</label>
-                        <input type="password" class="form-control" id="confirm_password" name="confirm_password" required>
-                    </div>
-                    
-                    <div class="d-grid">
-                        <button type="submit" class="btn btn-primary">Register</button>
-                    </div>
-                </form>
-                
-                <div class="mt-3 text-center">
-                    <p class="mb-0">Already have an account? <a href="login.php">Login here</a></p>
+            <div class="card shadow">
+                <div class="card-body p-4">
+                    <h4 class="card-title mb-4"><?= t('register') ?></h4>
+                    <?php if ($error): ?>
+                        <div class="alert alert-danger"><?= e($error) ?></div>
+                    <?php endif; ?>
+                    <?php if ($success): ?>
+                        <div class="alert alert-success"><?= e($success) ?> <a href="/auth/login.php"><?= t('login') ?></a></div>
+                    <?php else: ?>
+                    <form method="post">
+                        <div class="row">
+                            <div class="col-6 mb-3">
+                                <label class="form-label"><?= t('first_name') ?></label>
+                                <input type="text" name="firstName" class="form-control" required value="<?= e($_POST['firstName'] ?? '') ?>">
+                            </div>
+                            <div class="col-6 mb-3">
+                                <label class="form-label"><?= t('last_name') ?></label>
+                                <input type="text" name="lastName" class="form-control" required value="<?= e($_POST['lastName'] ?? '') ?>">
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label"><?= t('username') ?></label>
+                            <input type="text" name="username" class="form-control" required value="<?= e($_POST['username'] ?? '') ?>">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label"><?= t('email') ?></label>
+                            <input type="email" name="email" class="form-control" required value="<?= e($_POST['email'] ?? '') ?>">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label"><?= t('password') ?></label>
+                            <input type="password" name="password" class="form-control" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label"><?= t('confirm_password') ?></label>
+                            <input type="password" name="confirm_password" class="form-control" required>
+                        </div>
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary"><?= t('register') ?></button>
+                        </div>
+                    </form>
+                    <?php endif; ?>
                 </div>
             </div>
+            <p class="text-center mt-3">Already have an account? <a href="/auth/login.php"><?= t('login') ?></a></p>
         </div>
     </div>
 </div>
-
-<?php require_once '../includes/footer.php'; ?>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

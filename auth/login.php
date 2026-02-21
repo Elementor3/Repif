@@ -1,92 +1,86 @@
 <?php
-require_once '../config/database.php';
-require_once '../includes/functions.php';
+require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/i18n.php';
+require_once __DIR__ . '/../services/users.php';
 
-// Redirect if already logged in
 if (isLoggedIn()) {
-    header("Location: /user/dashboard.php");
-    exit();
+    header('Location: /user/dashboard.php');
+    exit;
 }
 
 $error = '';
-$success = '';
-
-// Process login
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = trim($_POST['username'] ?? '');
     $password = $_POST['password'] ?? '';
-    
-    if (empty($username) || empty($password)) {
-        $error = 'Please enter both username and password.';
-    } else {
-        // Check user credentials
-        $stmt = mysqli_prepare($conn, "SELECT pk_username, password_hash, role, firstName, lastName FROM user WHERE pk_username = ?");
-        mysqli_stmt_bind_param($stmt, "s", $username);
-        mysqli_stmt_execute($stmt);
-        $result = mysqli_stmt_get_result($stmt);
-        
-        if ($user = mysqli_fetch_assoc($result)) {
-            if (password_verify($password, $user['password_hash'])) {
-                // Login successful
-                $_SESSION['user_id'] = $user['pk_username'];
-                $_SESSION['username'] = $user['pk_username'];
-                $_SESSION['firstName'] = $user['firstName'];
-                $_SESSION['lastName'] = $user['lastName'];
-                $_SESSION['full_name'] = $user['firstName'] . ' ' . $user['lastName'];
-                $_SESSION['is_admin'] = ($user['role'] === 'Admin');
-                
-                header("Location: /user/dashboard.php");
-                exit();
-            } else {
-                $error = 'Invalid username or password.';
-            }
+    if ($username && $password) {
+        $user = getUserByUsername($conn, $username);
+        if ($user && password_verify($password, $user['password_hash'])) {
+            $_SESSION['username'] = $user['pk_username'];
+            $_SESSION['firstName'] = $user['firstName'];
+            $_SESSION['lastName'] = $user['lastName'];
+            $_SESSION['full_name'] = $user['firstName'] . ' ' . $user['lastName'];
+            $_SESSION['is_admin'] = $user['role'] === 'Admin';
+            $_SESSION['locale'] = $user['locale'] ?? 'en';
+            $_SESSION['theme'] = $user['theme'] ?? 'light';
+            $_SESSION['avatar'] = $user['avatar'] ?? '';
+            header('Location: /user/dashboard.php');
+            exit;
         } else {
-            $error = 'Invalid username or password.';
+            $error = t('invalid_credentials');
         }
+    } else {
+        $error = t('error_occurred');
     }
 }
-
-$pageTitle = 'Login';
-require_once '../includes/header.php';
 ?>
-
-<div class="row justify-content-center mt-6">
-    <div class="col-md-5">
-        <div class="card">
-            <div class="card-header">
-                <h3 class="mb-0">Login</h3>
+<!DOCTYPE html>
+<html lang="<?= e($locale ?? 'en') ?>" data-bs-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><?= t('login') ?> - WeatherStation</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.min.css">
+    <link rel="stylesheet" href="/assets/css/style.css">
+</head>
+<body class="bg-light">
+<div class="container">
+    <div class="row justify-content-center mt-5">
+        <div class="col-md-5 col-lg-4">
+            <div class="text-center mb-4">
+                <h2 class="fw-bold"><i class="bi bi-cloud-sun-fill text-primary"></i> WeatherStation</h2>
             </div>
-            <div class="card-body">
-                <?php if ($error): ?>
-                    <?php echo showError($error); ?>
-                <?php endif; ?>
-                
-                <?php if ($success): ?>
-                    <?php echo showSuccess($success); ?>
-                <?php endif; ?>
-                
-                <form method="POST" action="">
-                    <div class="mb-3">
-                        <label for="username" class="form-label">Username</label>
-                        <input type="text" class="form-control" id="username" name="username" required autofocus>
+            <div class="card shadow">
+                <div class="card-body p-4">
+                    <h4 class="card-title mb-4"><?= t('login') ?></h4>
+                    <?php if ($error): ?>
+                        <div class="alert alert-danger"><?= e($error) ?></div>
+                    <?php endif; ?>
+                    <form method="post">
+                        <div class="mb-3">
+                            <label class="form-label"><?= t('username') ?></label>
+                            <input type="text" name="username" class="form-control" required autofocus value="<?= e($_POST['username'] ?? '') ?>">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label"><?= t('password') ?></label>
+                            <input type="password" name="password" class="form-control" required>
+                        </div>
+                        <div class="d-grid mb-3">
+                            <button type="submit" class="btn btn-primary"><?= t('login') ?></button>
+                        </div>
+                    </form>
+                    <div class="text-center">
+                        <a href="/auth/forgot_password.php" class="text-muted small"><?= t('forgot_password') ?></a>
                     </div>
-                    
-                    <div class="mb-3">
-                        <label for="password" class="form-label">Password</label>
-                        <input type="password" class="form-control" id="password" name="password" required>
-                    </div>
-                    
-                    <div class="d-grid">
-                        <button type="submit" class="btn btn-primary">Login</button>
-                    </div>
-                </form>
-                
-                <div class="mt-3 text-center">
-                    <p class="mb-0">Don't have an account? <a href="register.php">Register here</a></p>
                 </div>
             </div>
+            <p class="text-center mt-3">
+                <?= t('register') ?>? <a href="/auth/register.php"><?= t('register') ?></a>
+            </p>
         </div>
     </div>
 </div>
-
-<?php require_once '../includes/footer.php'; ?>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

@@ -1,190 +1,217 @@
 <?php
-require_once '../config/database.php';
-require_once '../includes/functions.php';
-
+require_once __DIR__ . '/../includes/header.php';
 requireLogin();
+require_once __DIR__ . '/../services/measurements.php';
+require_once __DIR__ . '/../services/stations.php';
 
-// Get user's stations for dropdown
-$stmt = mysqli_prepare($conn,
-    "SELECT pk_serialNumber, name FROM station WHERE fk_registeredBy = ? ORDER BY name"
-);
-mysqli_stmt_bind_param($stmt, "s", $_SESSION['username']);
-mysqli_stmt_execute($stmt);
-$userStations = mysqli_stmt_get_result($stmt);
+$username = $_SESSION['username'];
+$myStations = getUserStationsList($conn, $username);
 
-$pageTitle = 'Measurements';
-require_once '../includes/header.php';
+// Filters
+$filters = [
+    'station' => $_GET['station'] ?? '',
+    'date_from' => $_GET['date_from'] ?? '',
+    'date_to' => $_GET['date_to'] ?? '',
+    'temp_min' => $_GET['temp_min'] ?? '',
+    'temp_max' => $_GET['temp_max'] ?? '',
+];
+
+// Only allow stations owned by user
+if ($filters['station'] && !in_array($filters['station'], array_column($myStations, 'pk_serialNumber'))) {
+    $filters['station'] = '';
+}
+
+$page = max(1, (int)($_GET['page'] ?? 1));
+$perPage = (int)($_GET['per_page'] ?? 20);
+if (!in_array($perPage, [10, 20, 50, 100])) $perPage = 20;
+
+// CSV export
+if (isset($_GET['export']) && $_GET['export'] === 'csv') {
+    $csv = exportCsv($conn, $filters);
+    header('Content-Type: text/csv');
+    header('Content-Disposition: attachment; filename="measurements_' . date('Ymd_His') . '.csv"');
+    echo $csv;
+    exit;
+}
+
+$total = countMeasurements($conn, $filters);
+$totalPages = max(1, (int)ceil($total / $perPage));
+$page = min($page, $totalPages);
+$measurements = getMeasurements($conn, $filters, $page, $perPage);
+
+$from = ($page - 1) * $perPage + 1;
+$to = min($page * $perPage, $total);
+$paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from : 0, $to, $total], t('pagination_info'));
 ?>
+<h2 class="mb-4"><i class="bi bi-graph-up me-2"></i><?= t('measurements') ?></h2>
 
-<div class="row">
-    <div class="col-12">
-        <h2>View Measurements</h2>
-        
-        <div id="alert-container"></div>
-        
-        <!-- Filter Form -->
-        <div class="card mb-4">
-            <div class="card-header">
-                <h5 class="mb-0">Filter Measurements</h5>
+<!-- Filter Card -->
+<div class="card filter-card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label"><?= t('station') ?></label>
+                <select name="station" class="form-select form-select-sm">
+                    <option value="">-- All --</option>
+                    <?php foreach ($myStations as $st): ?>
+                    <option value="<?= e($st['pk_serialNumber']) ?>" <?= $filters['station'] === $st['pk_serialNumber'] ? 'selected' : '' ?>>
+                        <?= e($st['name'] ?? $st['pk_serialNumber']) ?>
+                    </option>
+                    <?php endforeach; ?>
+                </select>
             </div>
-            <div class="card-body">
-                <form id="filterForm" class="row g-3">
-                    <div class="col-md-4">
-                        <label class="form-label">Select Station *</label>
-                        <select class="form-select" id="station" required>
-                            <option value="">-- Select Station --</option>
-                            <?php while ($station = mysqli_fetch_assoc($userStations)): ?>
-                                <option value="<?= htmlspecialchars($station['pk_serialNumber']) ?>">
-                                    <?= htmlspecialchars($station['name'] ?: $station['pk_serialNumber']) ?>
-                                </option>
-                            <?php endwhile; ?>
-                        </select>
-                    </div>
-                    
-                    <div class="col-md-3">
-                        <label class="form-label">Start Date/Time</label>
-                        <input type="datetime-local" class="form-control" id="start_date">
-                    </div>
-                    
-                    <div class="col-md-3">
-                        <label class="form-label">End Date/Time</label>
-                        <input type="datetime-local" class="form-control" id="end_date">
-                    </div>
-                    
-                    <div class="col-md-2">
-                        <label class="form-label">&nbsp;</label>
-                        <button type="submit" class="btn btn-primary w-100">View Data</button>
-                    </div>
-                </form>
+            <div class="col-md-2">
+                <label class="form-label"><?= t('date_from') ?></label>
+                <input type="date" name="date_from" class="form-control form-control-sm" value="<?= e($filters['date_from']) ?>">
             </div>
-        </div>
-        
-        <!-- Results -->
-        <div class="card" id="results-card" style="display: none;">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="mb-0">Measurement Data</h5>
-                <small class="text-muted" id="pagination-info"></small>
+            <div class="col-md-2">
+                <label class="form-label"><?= t('date_to') ?></label>
+                <input type="date" name="date_to" class="form-control form-control-sm" value="<?= e($filters['date_to']) ?>">
             </div>
-            <div class="card-body">
-                <div class="table-responsive">
-                    <table class="table table-striped table-sm">
-                        <thead>
-                            <tr>
-                                <th>Timestamp</th>
-                                <th>Temp (°C)</th>
-                                <th>Humidity (%)</th>
-                                <th>Pressure (hPa)</th>
-                                <th>Light (lux)</th>
-                                <th>Air Quality (ppm)</th>
-                            </tr>
-                        </thead>
-                        <tbody id="measurements-container">
-                            <tr><td colspan="6" class="text-center">No data</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-                
-                <nav id="pagination" style="display: none;">
-                    <ul class="pagination justify-content-end mb-0">
-                        <li class="page-item" id="prev-page">
-                            <a class="page-link" href="#">&laquo;</a>
-                        </li>
-                        <li class="page-item" id="next-page">
-                            <a class="page-link" href="#">&raquo;</a>
-                        </li>
-                    </ul>
-                </nav>
+            <div class="col-md-1">
+                <label class="form-label"><?= t('temp_min') ?></label>
+                <input type="number" name="temp_min" step="0.1" class="form-control form-control-sm" value="<?= e($filters['temp_min']) ?>">
             </div>
-        </div>
+            <div class="col-md-1">
+                <label class="form-label"><?= t('temp_max') ?></label>
+                <input type="number" name="temp_max" step="0.1" class="form-control form-control-sm" value="<?= e($filters['temp_max']) ?>">
+            </div>
+            <div class="col-md-1">
+                <label class="form-label"><?= t('per_page') ?></label>
+                <select name="per_page" class="form-select form-select-sm">
+                    <?php foreach ([10, 20, 50, 100] as $pp): ?>
+                    <option value="<?= $pp ?>" <?= $perPage === $pp ? 'selected' : '' ?>><?= $pp ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="col-md-2 d-flex gap-1">
+                <button type="submit" class="btn btn-primary btn-sm"><?= t('filter') ?></button>
+                <a href="/user/measurements.php" class="btn btn-outline-secondary btn-sm"><?= t('cancel') ?></a>
+            </div>
+        </form>
     </div>
 </div>
 
+<!-- Actions -->
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <span class="pagination-info"><?= $paginationInfo ?></span>
+    <div class="d-flex gap-2">
+        <button class="btn btn-sm btn-outline-success" onclick="generateChart()"><?= t('generate_chart') ?></button>
+        <a href="?<?= http_build_query(array_merge($filters, ['export' => 'csv'])) ?>" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-download me-1"></i><?= t('export_csv') ?>
+        </a>
+    </div>
+</div>
+
+<!-- Chart Container -->
+<div id="chartContainer" class="card mb-4 d-none">
+    <div class="card-header d-flex justify-content-between">
+        <span><?= t('generate_chart') ?></span>
+        <div>
+            <button class="btn btn-sm btn-outline-secondary me-1" onclick="downloadChart()"><?= t('download_chart') ?></button>
+            <button class="btn btn-sm btn-outline-danger" onclick="closeChart()"><?= t('close_chart') ?></button>
+        </div>
+    </div>
+    <div class="card-body" style="height:350px;">
+        <canvas id="measurementChart"></canvas>
+    </div>
+</div>
+
+<?php if (empty($measurements)): ?>
+    <div class="alert alert-info"><?= t('no_measurements') ?></div>
+<?php else: ?>
+<div class="table-responsive">
+    <table class="table table-sm table-hover align-middle">
+        <thead>
+            <tr>
+                <th><?= t('timestamp') ?></th>
+                <th><?= t('station') ?></th>
+                <th><?= t('temperature') ?></th>
+                <th><?= t('humidity') ?></th>
+                <th><?= t('air_pressure') ?></th>
+                <th><?= t('light_intensity') ?></th>
+                <th><?= t('air_quality') ?></th>
+            </tr>
+        </thead>
+        <tbody>
+        <?php foreach ($measurements as $m): ?>
+        <tr>
+            <td><?= formatDateTime($m['timestamp']) ?></td>
+            <td><?= e($m['station_name'] ?? $m['fk_station']) ?></td>
+            <td><?= $m['temperature'] !== null ? e($m['temperature']) . '°C' : '-' ?></td>
+            <td><?= $m['humidity'] !== null ? e($m['humidity']) . '%' : '-' ?></td>
+            <td><?= $m['airPressure'] !== null ? e($m['airPressure']) . ' hPa' : '-' ?></td>
+            <td><?= $m['lightIntensity'] !== null ? e($m['lightIntensity']) . ' lux' : '-' ?></td>
+            <td><?= $m['airQuality'] !== null ? e($m['airQuality']) : '-' ?></td>
+        </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+</div>
+
+<!-- Pagination -->
+<?php if ($totalPages > 1): ?>
+<nav>
+    <ul class="pagination pagination-sm justify-content-center">
+        <?php for ($i = 1; $i <= $totalPages; $i++): ?>
+        <li class="page-item <?= $i === $page ? 'active' : '' ?>">
+            <a class="page-link" href="?<?= http_build_query(array_merge($filters, ['page' => $i, 'per_page' => $perPage])) ?>"><?= $i ?></a>
+        </li>
+        <?php endfor; ?>
+    </ul>
+</nav>
+<?php endif; ?>
+<?php endif; ?>
+
 <script>
-var currentPage = 1;
-var totalPages = 1;
-var currentStation = '';
-var currentStart = '';
-var currentEnd = '';
+var measurementChart = null;
 
-$(document).ready(function() {
-    $('#filterForm').submit(function(e) {
-        e.preventDefault();
-        currentPage = 1;
-        loadMeasurements();
-    });
-    
-    $('#prev-page a').click(function(e) {
-        e.preventDefault();
-        if (currentPage > 1) {
-            currentPage--;
-            loadMeasurements();
-        }
-    });
-    
-    $('#next-page a').click(function(e) {
-        e.preventDefault();
-        if (currentPage < totalPages) {
-            currentPage++;
-            loadMeasurements();
-        }
-    });
-});
+function generateChart() {
+    var params = new URLSearchParams(window.location.search);
+    params.set('action', 'chart');
+    $.get('/api/measurements.php?' + params.toString(), function(res) {
+        if (!res.success || !res.data.length) return;
+        var labels = res.data.map(r => r.timestamp);
+        var temps = res.data.map(r => r.temperature);
+        var hums = res.data.map(r => r.humidity);
 
-function loadMeasurements() {
-    var station = $('#station').val();
-    if (!station) {
-        showAlert('danger', 'Please select a station');
-        return;
-    }
-    
-    currentStation = station;
-    currentStart = $('#start_date').val();
-    currentEnd = $('#end_date').val();
-    
-    $.get('/api/measurements.php', {
-        station: station,
-        start: currentStart,
-        end: currentEnd,
-        page: currentPage
-    }, function(response) {
-        if (response.error) {
-            showAlert('danger', response.error);
-            return;
-        }
-        
-        $('#measurements-container').html(response.html);
-        $('#pagination-info').text('Page ' + currentPage + ' of ' + response.pages + ' (Total: ' + response.total + ')');
-        
-        totalPages = response.pages;
-        if (totalPages > 1) {
-            $('#pagination').show();
-            $('#prev-page').toggleClass('disabled', currentPage <= 1);
-            $('#next-page').toggleClass('disabled', currentPage >= totalPages);
-        } else {
-            $('#pagination').hide();
-        }
-        
-        $('#results-card').show();
-    }, 'json').fail(function() {
-        showAlert('danger', 'Failed to load measurements');
-    });
+        document.getElementById('chartContainer').classList.remove('d-none');
+
+        if (measurementChart) measurementChart.destroy();
+        var ctx = document.getElementById('measurementChart').getContext('2d');
+        measurementChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    { label: 'Temperature (°C)', data: temps, borderColor: '#dc3545', backgroundColor: 'rgba(220,53,69,0.1)', tension: 0.3, yAxisID: 'y' },
+                    { label: 'Humidity (%)', data: hums, borderColor: '#0d6efd', backgroundColor: 'rgba(13,110,253,0.1)', tension: 0.3, yAxisID: 'y1' }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                scales: {
+                    y: { type: 'linear', display: true, position: 'left' },
+                    y1: { type: 'linear', display: true, position: 'right', grid: { drawOnChartArea: false } }
+                }
+            }
+        });
+    }, 'json');
 }
 
-function showAlert(type, message) {
-    var alertHtml = '<div class="alert alert-' + type + ' alert-dismissible fade show" role="alert">' +
-                    escapeHtml(message) +
-                    '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>' +
-                    '</div>';
-    $('#alert-container').html(alertHtml);
-    
-    setTimeout(function() {
-        $('.alert').fadeOut();
-    }, 5000);
+function closeChart() {
+    document.getElementById('chartContainer').classList.add('d-none');
+    if (measurementChart) { measurementChart.destroy(); measurementChart = null; }
 }
 
-function escapeHtml(text) {
-    return $('<div>').text(text).html();
+function downloadChart() {
+    var canvas = document.getElementById('measurementChart');
+    var link = document.createElement('a');
+    link.download = 'chart.png';
+    link.href = canvas.toDataURL();
+    link.click();
 }
 </script>
-
-<?php require_once '../includes/footer.php'; ?>
+<?php require_once __DIR__ . '/../includes/footer.php'; ?>
