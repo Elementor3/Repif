@@ -1,184 +1,189 @@
 <?php
-require_once '../config/database.php';
-require_once '../includes/functions.php';
-require_once '../services/friends.php';
-
+require_once __DIR__ . '/../includes/header.php';
 requireLogin();
+require_once __DIR__ . '/../services/friends.php';
+require_once __DIR__ . '/../services/users.php';
+require_once __DIR__ . '/../services/notifications.php';
 
-$pageTitle = 'Friends';
-require_once '../includes/header.php';
+$username = $_SESSION['username'];
+$msg = '';
+$err = '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = $_POST['action'] ?? '';
+
+    if ($action === 'send_request') {
+        $receiver = trim($_POST['receiver'] ?? '');
+        if ($receiver && $receiver !== $username) {
+            if (areFriends($conn, $username, $receiver)) {
+                $err = 'Already friends';
+            } elseif (hasPendingRequest($conn, $username, $receiver)) {
+                $err = 'Request already sent';
+            } else {
+                $targetUser = getUserByUsername($conn, $receiver);
+                if ($targetUser) {
+                    sendFriendRequest($conn, $username, $receiver);
+                    createNotification($conn, $receiver, 'friend_request', t('friend_request_sent'), $_SESSION['full_name'] . ' sent you a friend request', '/user/friends.php');
+                    $msg = t('friend_request_sent');
+                } else {
+                    $err = 'User not found';
+                }
+            }
+        }
+    } elseif ($action === 'accept') {
+        $reqId = (int)($_POST['request_id'] ?? 0);
+        if (acceptRequest($conn, $reqId, $username)) {
+            // Notify sender
+            $stmt = $conn->prepare("SELECT fk_sender FROM request WHERE pk_requestID=?");
+            $stmt->bind_param("i", $reqId);
+            $stmt->execute();
+            $req = $stmt->get_result()->fetch_assoc();
+            if ($req) createNotification($conn, $req['fk_sender'], 'friend_accepted', t('friend_accepted'), $_SESSION['full_name'] . ' accepted your friend request', '/user/friends.php');
+            $msg = t('friend_accepted');
+        }
+    } elseif ($action === 'reject') {
+        $reqId = (int)($_POST['request_id'] ?? 0);
+        rejectRequest($conn, $reqId, $username);
+        $msg = t('success');
+    } elseif ($action === 'remove') {
+        $friend = trim($_POST['friend'] ?? '');
+        if ($friend) {
+            removeFriend($conn, $username, $friend);
+            $msg = t('success');
+        }
+    }
+}
+
+$friends = getFriends($conn, $username);
+$pendingRequests = getPendingRequests($conn, $username);
+
+// Search users
+$searchResults = [];
+$searchQuery = trim($_GET['search'] ?? '');
+if ($searchQuery) {
+    $like = '%' . $searchQuery . '%';
+    $stmt = $conn->prepare("SELECT pk_username, firstName, lastName, avatar FROM user WHERE (pk_username LIKE ? OR firstName LIKE ? OR lastName LIKE ?) AND pk_username != ? LIMIT 20");
+    $stmt->bind_param("ssss", $like, $like, $like, $username);
+    $stmt->execute();
+    $searchResults = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+}
 ?>
+<h2 class="mb-4"><i class="bi bi-people me-2"></i><?= t('friends') ?></h2>
 
-<div class="row">
-    <div class="col-12">
-        <h2>Friends Management</h2>
-        
-        <div id="alert-container"></div>
-        
-        <!-- Add Friend -->
+<?php if ($msg): ?><?= showSuccess($msg) ?><?php endif; ?>
+<?php if ($err): ?><?= showError($err) ?><?php endif; ?>
+
+<div class="row g-4">
+    <div class="col-md-8">
+        <!-- Search -->
         <div class="card mb-4">
-            <div class="card-header">
-                <h5 class="mb-0">Add New Friend</h5>
-            </div>
             <div class="card-body">
-                <form id="addFriendForm" class="row g-3">
-                    <div class="col-md-8">
-                        <label class="form-label">Friend's Username</label>
-                        <input type="text" class="form-control" id="friend_username" required>
-                    </div>
-                    <div class="col-md-4">
-                        <label class="form-label">&nbsp;</label>
-                        <button type="submit" class="btn btn-primary w-100">Add Friend</button>
-                    </div>
+                <form method="get" class="d-flex gap-2">
+                    <input type="text" name="search" class="form-control" placeholder="<?= t('search') ?> users..." value="<?= e($searchQuery) ?>">
+                    <button type="submit" class="btn btn-primary"><?= t('search') ?></button>
                 </form>
-            </div>
-        </div>
-        
-        <!-- Pending Requests -->
-        <div class="card mb-4">
-            <div class="card-header">
-                <h5 class="mb-0">Friend Requests</h5>
-            </div>
-            <div class="card-body">
-                <div class="table-responsive">
-                    <table class="table" id="requests-table">
-                        <tbody id="requests-container">
-                            <tr><td colspan="2" class="text-center">Loading...</td></tr>
-                        </tbody>
-                    </table>
+                <?php if ($searchQuery && $searchResults): ?>
+                <div class="mt-3">
+                    <?php foreach ($searchResults as $u): ?>
+                    <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+                        <div class="d-flex align-items-center gap-2">
+                            <?php if ($u['avatar']): ?>
+                            <img src="/assets/avatars/presets/<?= e($u['avatar']) ?>" class="rounded-circle" width="32" height="32">
+                            <?php else: ?>
+                            <i class="bi bi-person-circle fs-4"></i>
+                            <?php endif; ?>
+                            <span><?= e($u['firstName'] . ' ' . $u['lastName']) ?> <small class="text-muted">(<?= e($u['pk_username']) ?>)</small></span>
+                        </div>
+                        <?php if (areFriends($conn, $username, $u['pk_username'])): ?>
+                            <span class="badge bg-success">Friends</span>
+                        <?php elseif (hasPendingRequest($conn, $username, $u['pk_username'])): ?>
+                            <span class="badge bg-warning">Pending</span>
+                        <?php else: ?>
+                            <form method="post" class="d-inline">
+                                <input type="hidden" name="action" value="send_request">
+                                <input type="hidden" name="receiver" value="<?= e($u['pk_username']) ?>">
+                                <button type="submit" class="btn btn-sm btn-primary"><?= t('send_request') ?></button>
+                            </form>
+                        <?php endif; ?>
+                    </div>
+                    <?php endforeach; ?>
                 </div>
+                <?php elseif ($searchQuery): ?>
+                <p class="text-muted mt-2">No users found</p>
+                <?php endif; ?>
             </div>
         </div>
-        
-        <!-- Friends List -->
+
+        <!-- Friends list -->
         <div class="card">
-            <div class="card-header">
-                <h5 class="mb-0">My Friends</h5>
-            </div>
+            <div class="card-header"><h5 class="mb-0"><?= t('friends') ?> (<?= count($friends) ?>)</h5></div>
             <div class="card-body">
-                <div class="table-responsive">
-                    <table class="table table-striped">
-                        <thead>
-                            <tr>
-                                <th>Username</th>
-                                <th>Full Name</th>
-                                <th>Email</th>
-                                <th>Friends Since</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="friends-container">
-                            <tr><td colspan="5" class="text-center">Loading...</td></tr>
-                        </tbody>
-                    </table>
+                <?php if (empty($friends)): ?>
+                    <p class="text-muted"><?= t('no_friends') ?></p>
+                <?php else: ?>
+                <div class="list-group list-group-flush">
+                    <?php foreach ($friends as $f): ?>
+                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center gap-2">
+                            <?php if ($f['avatar'] ?? ''): ?>
+                            <img src="/assets/avatars/presets/<?= e($f['avatar']) ?>" class="rounded-circle" width="36" height="36">
+                            <?php else: ?>
+                            <i class="bi bi-person-circle fs-3"></i>
+                            <?php endif; ?>
+                            <div>
+                                <div class="fw-semibold"><?= e($f['firstName'] . ' ' . $f['lastName']) ?></div>
+                                <small class="text-muted">@<?= e($f['pk_username']) ?></small>
+                            </div>
+                        </div>
+                        <div class="d-flex gap-1">
+                            <a href="/user/chat.php?with=<?= urlencode($f['pk_username']) ?>" class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-chat"></i>
+                            </a>
+                            <form method="post" class="d-inline">
+                                <input type="hidden" name="action" value="remove">
+                                <input type="hidden" name="friend" value="<?= e($f['pk_username']) ?>">
+                                <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Remove friend?')"><?= t('remove') ?></button>
+                            </form>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
                 </div>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pending requests -->
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header"><h5 class="mb-0"><?= t('pending_requests') ?> (<?= count($pendingRequests) ?>)</h5></div>
+            <div class="card-body">
+                <?php if (empty($pendingRequests)): ?>
+                    <p class="text-muted">No pending requests</p>
+                <?php else: ?>
+                <?php foreach ($pendingRequests as $r): ?>
+                <div class="d-flex align-items-center gap-2 py-2 border-bottom">
+                    <div class="flex-grow-1">
+                        <div><?= e($r['firstName'] . ' ' . $r['lastName']) ?></div>
+                        <small class="text-muted"><?= formatDateTime($r['createdAt']) ?></small>
+                    </div>
+                    <div class="d-flex flex-column gap-1">
+                        <form method="post" class="d-inline">
+                            <input type="hidden" name="action" value="accept">
+                            <input type="hidden" name="request_id" value="<?= $r['pk_requestID'] ?>">
+                            <button type="submit" class="btn btn-sm btn-success w-100"><?= t('accept') ?></button>
+                        </form>
+                        <form method="post" class="d-inline">
+                            <input type="hidden" name="action" value="reject">
+                            <input type="hidden" name="request_id" value="<?= $r['pk_requestID'] ?>">
+                            <button type="submit" class="btn btn-sm btn-outline-danger w-100"><?= t('reject') ?></button>
+                        </form>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+                <?php endif; ?>
             </div>
         </div>
     </div>
 </div>
-
-<script>
-$(document).ready(function() {
-    loadRequests();
-    loadFriends();
-    
-    $('#addFriendForm').submit(function(e) {
-        e.preventDefault();
-        
-        $.post('/api/friends.php', {
-            action: 'send_request',
-            friend_username: $('#friend_username').val()
-        }, function(response) {
-            var parts = response.split('|');
-            if (parts[0] === 'OK') {
-                showAlert('success', parts[1]);
-                $('#friend_username').val('');
-                loadRequests();
-                loadFriends();
-            } else {
-                showAlert('danger', parts[1]);
-            }
-        });
-    });
-});
-
-function loadRequests() {
-    $.get('/api/friends.php?action=get_requests', function(data) {
-        $('#requests-container').html(data);
-    });
-}
-
-function loadFriends() {
-    $.get('/api/friends.php?action=get_friends', function(data) {
-        $('#friends-container').html(data);
-    });
-}
-
-function acceptRequest(requestId) {
-    $.post('/api/friends.php', {
-        action: 'accept_request',
-        request_id: requestId
-    }, function(response) {
-        var parts = response.split('|');
-        if (parts[0] === 'OK') {
-            showAlert('success', parts[1]);
-            loadRequests();
-            loadFriends();
-        } else {
-            showAlert('danger', parts[1]);
-        }
-    });
-}
-
-function rejectRequest(requestId) {
-    $.post('/api/friends.php', {
-        action: 'reject_request',
-        request_id: requestId
-    }, function(response) {
-        var parts = response.split('|');
-        if (parts[0] === 'OK') {
-            showAlert('success', parts[1]);
-            loadRequests();
-        } else {
-            showAlert('danger', parts[1]);
-        }
-    });
-}
-
-function removeFriend(username) {
-    if (!confirm('This will also unshare all collections between you. Continue?')) {
-        return;
-    }
-    
-    $.post('/api/friends.php', {
-        action: 'remove_friend',
-        friend_username: username
-    }, function(response) {
-        var parts = response.split('|');
-        if (parts[0] === 'OK') {
-            showAlert('success', parts[1]);
-            loadFriends();
-        } else {
-            showAlert('danger', parts[1]);
-        }
-    });
-}
-
-function showAlert(type, message) {
-    var alertHtml = '<div class="alert alert-' + type + ' alert-dismissible fade show" role="alert">' +
-                    escapeHtml(message) +
-                    '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>' +
-                    '</div>';
-    $('#alert-container').html(alertHtml);
-    
-    setTimeout(function() {
-        $('.alert').fadeOut();
-    }, 5000);
-}
-
-function escapeHtml(text) {
-    return $('<div>').text(text).html();
-}
-</script>
-
-<?php require_once '../includes/footer.php'; ?>
+<?php require_once __DIR__ . '/../includes/footer.php'; ?>

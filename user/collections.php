@@ -1,428 +1,380 @@
-
 <?php
-require_once '../config/database.php';
-require_once '../includes/functions.php';
+require_once __DIR__ . '/../includes/header.php';
 requireLogin();
-// --------------------- LOAD DATA ---------------------
+require_once __DIR__ . '/../services/collections.php';
+require_once __DIR__ . '/../services/stations.php';
+require_once __DIR__ . '/../services/friends.php';
+require_once __DIR__ . '/../services/notifications.php';
 
-$stmt = mysqli_prepare($conn,
-    "SELECT c.pk_collectionID, c.name, c.description, c.createdAt,
-           (SELECT COUNT(*) FROM contains WHERE pkfk_collection = c.pk_collectionID) AS measurement_count
-     FROM collection c
-     WHERE c.fk_user = ?
-     ORDER BY c.createdAt DESC"
-);
-mysqli_stmt_bind_param($stmt, "s", $_SESSION['username']);
-mysqli_stmt_execute($stmt);
-$collections = mysqli_stmt_get_result($stmt);
+$username = $_SESSION['username'];
+$msg = '';
+$err = '';
 
-$userStations = getUserStations($conn, $_SESSION['username']);
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = $_POST['action'] ?? '';
 
-$stmt = mysqli_prepare($conn,
-    "SELECT pk_user2 AS friend_username
-     FROM friendship WHERE pk_user1 = ?
-     UNION
-     SELECT pk_user1 AS friend_username
-     FROM friendship WHERE pk_user2 = ?
-     ORDER BY friend_username"
-);
-mysqli_stmt_bind_param($stmt, "ss", $_SESSION['username'], $_SESSION['username']);
-mysqli_stmt_execute($stmt);
-$friends = mysqli_stmt_get_result($stmt);
+    if ($action === 'create') {
+        $name = trim($_POST['name'] ?? '');
+        $desc = trim($_POST['description'] ?? '');
+        if ($name) {
+            if (createCollection($conn, $username, $name, $desc)) {
+                $msg = t('success');
+            } else {
+                $err = t('error_occurred');
+            }
+        }
+    } elseif ($action === 'update') {
+        $id = (int)($_POST['collection_id'] ?? 0);
+        $coll = getCollectionById($conn, $id);
+        if ($coll && $coll['fk_user'] === $username) {
+            updateCollection($conn, $id, trim($_POST['name'] ?? ''), trim($_POST['description'] ?? ''));
+            $msg = t('success');
+        }
+    } elseif ($action === 'delete') {
+        $id = (int)($_POST['collection_id'] ?? 0);
+        $coll = getCollectionById($conn, $id);
+        if ($coll && $coll['fk_user'] === $username) {
+            deleteCollection($conn, $id);
+            $msg = t('success');
+        }
+    } elseif ($action === 'add_sample') {
+        $id = (int)($_POST['collection_id'] ?? 0);
+        $coll = getCollectionById($conn, $id);
+        if ($coll && $coll['fk_user'] === $username) {
+            $station = trim($_POST['station'] ?? '');
+            $start = convertToMySQLDateTime($_POST['start'] ?? '');
+            $end = convertToMySQLDateTime($_POST['end'] ?? '');
+            if ($station && $start && $end) {
+                addSample($conn, $id, $station, $start, $end);
+                $msg = t('success');
+            }
+        }
+    } elseif ($action === 'remove_sample') {
+        $sampleId = (int)($_POST['sample_id'] ?? 0);
+        removeSample($conn, $sampleId);
+        $msg = t('success');
+    } elseif ($action === 'share') {
+        $id = (int)($_POST['collection_id'] ?? 0);
+        $withUser = trim($_POST['share_with'] ?? '');
+        $coll = getCollectionById($conn, $id);
+        if ($coll && $coll['fk_user'] === $username && areFriends($conn, $username, $withUser)) {
+            shareCollection($conn, $id, $withUser);
+            createNotification($conn, $withUser, 'collection_shared', t('collection_shared'), $_SESSION['full_name'] . ' shared collection: ' . $coll['name'], '/user/collections.php');
+            $msg = t('success');
+        } else {
+            $err = 'Can only share with friends';
+        }
+    } elseif ($action === 'unshare') {
+        $id = (int)($_POST['collection_id'] ?? 0);
+        $withUser = trim($_POST['unshare_user'] ?? '');
+        $coll = getCollectionById($conn, $id);
+        if ($coll && $coll['fk_user'] === $username) {
+            unshareCollection($conn, $id, $withUser);
+            $msg = t('success');
+        }
+    }
+}
 
-$pageTitle = "My Collections";
-require_once "../includes/header.php";
+$activeTab = $_GET['tab'] ?? 'mine';
+$viewId = isset($_GET['view']) ? (int)$_GET['view'] : 0;
+
+if ($viewId) {
+    $viewColl = getCollectionById($conn, $viewId);
+    $canView = $viewColl && ($viewColl['fk_user'] === $username || (function() use ($conn, $username, $viewId) {
+        $shared = getSharedCollections($conn, $username);
+        return in_array($viewId, array_column($shared, 'pk_collectionID'));
+    })());
+}
+
+$myCollections = getUserCollections($conn, $username);
+$sharedCollections = getSharedCollections($conn, $username);
+$myStations = getUserStationsList($conn, $username);
+$myFriends = getFriends($conn, $username);
 ?>
+<h2 class="mb-4"><i class="bi bi-collection me-2"></i><?= t('collections') ?></h2>
 
-<!-- ====================== PAGE HTML ========================= -->
+<?php if ($msg): ?><?= showSuccess($msg) ?><?php endif; ?>
+<?php if ($err): ?><?= showError($err) ?><?php endif; ?>
 
-<div class="row">
-    <div class="col-12">
-
-        <h2>My Collections</h2>
-
-        <?php if (isset($_GET['created'])) echo showSuccess("Collection created successfully!"); ?>
-        <?php if (isset($_GET['updated'])) echo showSuccess("Collection updated successfully!"); ?>
-        <?php if (isset($_GET['deleted'])) echo showSuccess("Collection deleted successfully!"); ?>
-        <?php if (isset($_GET['shared'])) echo showSuccess("Collection shared!"); ?>
-        <?php if (isset($_GET['unshared'])) echo showSuccess("Access removed!"); ?>
-
-        <?php if (isset($_GET['error'])) echo showError(e($_GET['error'])); ?>
-
-
-
-        <!-- CREATE COLLECTION CARD -->
-        <div class="card mb-4">
-            <div class="card-header"><h5>Create New Collection</h5></div>
-            <div class="card-body">
-
-                <form method="POST" action="/api/collections.php">
-                    <input type="hidden" name="action" value="collection.create">
-
-                    <div class="row g-3">
-
-                        <div class="col-md-6">
-                            <label class="form-label">Collection Name *</label>
-                            <input type="text" class="form-control" name="collection_name" required>
-                        </div>
-
-                        <div class="col-md-6">
-                            <label class="form-label">Select Station *</label>
-                            <select class="form-select" name="station" required>
-                                <option value="">-- Select Station --</option>
-                                <?php mysqli_data_seek($userStations, 0); ?>
-                                <?php while ($st = mysqli_fetch_assoc($userStations)): ?>
-                                    <option value="<?php echo e($st['pk_serialNumber']); ?>">
-                                        <?php echo e($st['name'] ?: $st['pk_serialNumber']); ?>
-                                    </option>
-                                <?php endwhile; ?>
-                            </select>
-                        </div>
-
-                        <div class="col-md-6">
-                            <label class="form-label">Start Date/Time *</label>
-                            <input type="datetime-local" class="form-control" name="start_date" required>
-                        </div>
-
-                        <div class="col-md-6">
-                            <label class="form-label">End Date/Time *</label>
-                            <input type="datetime-local" class="form-control" name="end_date" required>
-                        </div>
-
-                        <div class="col-12">
-                            <label class="form-label">Description</label>
-                            <textarea class="form-control" name="description" rows="2"></textarea>
-                        </div>
-
-                        <div class="col-12">
-                            <button class="btn btn-primary">Create Collection</button>
-                        </div>
-
-                    </div>
-                </form>
-
-            </div>
-        </div>
-
-
-
-
-        <!-- ===================== COLLECTIONS LIST ======================= -->
-
-        <div class="card">
-            <div class="card-header">
-                <h5>My Collections</h5>
-            </div>
-
-            <div class="card-body">
-
-                <?php if (mysqli_num_rows($collections) === 0): ?>
-                    <p class="text-muted">You have no collections yet.</p>
-
-                <?php else: ?>
-
-                    <div class="table-responsive">
-                        <table class="table table-striped">
-
-                            <thead>
-                                <tr>
-                                    <th>ID</th>
-                                    <th>Name</th>
-                                    <th>Description</th>
-                                    <th>Measurements</th>
-                                    <th>Created</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-
-                            <tbody>
-                                <?php mysqli_data_seek($collections, 0); ?>
-                                <?php while ($col = mysqli_fetch_assoc($collections)): ?>
-                                    <tr>
-                                        <td>#<?php echo e($col['pk_collectionID']); ?></td>
-                                        <td><strong><?php echo e($col['name']); ?></strong></td>
-                                        <td><?php echo e(substr($col['description'] ?: '-', 0, 50)); ?></td>
-                                        <td><?php echo e($col['measurement_count']); ?></td>
-                                        <td><?php echo formatDateTime($col['createdAt']); ?></td>
-
-                                        <td class="table-actions">
-
-                                            <button class="btn btn-sm btn-info"
-                                                data-bs-toggle="modal"
-                                                data-bs-target="#viewModal_<?php echo $col['pk_collectionID']; ?>">
-                                                View
-                                            </button>
-
-                                            <button class="btn btn-sm btn-primary"
-                                                data-bs-toggle="modal"
-                                                data-bs-target="#editModal_<?php echo $col['pk_collectionID']; ?>">
-                                                Edit
-                                            </button>
-
-                                            <button class="btn btn-sm btn-success"
-                                                data-bs-toggle="modal"
-                                                data-bs-target="#shareModal_<?php echo $col['pk_collectionID']; ?>">
-                                                Share
-                                            </button>
-
-                                            <button class="btn btn-sm btn-danger"
-                                                data-bs-toggle="modal"
-                                                data-bs-target="#deleteModal_<?php echo $col['pk_collectionID']; ?>">
-                                                Delete
-                                            </button>
-
-                                        </td>
-                                    </tr>
-                                <?php endwhile; ?>
-                            </tbody>
-
-                        </table>
-                    </div>
-
-                <?php endif; ?>
-
-            </div>
-        </div>
-
+<?php if ($viewId && isset($viewColl) && $canView): ?>
+    <!-- View Collection Detail -->
+    <div class="d-flex align-items-center mb-3 gap-2">
+        <a href="/user/collections.php" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i><?= t('back') ?></a>
+        <h4 class="mb-0"><?= e($viewColl['name']) ?></h4>
     </div>
-</div>
+    <p class="text-muted"><?= e($viewColl['description'] ?? '') ?></p>
 
-
-
-<!-- ============================================================= -->
-<!-- ================== MODALS MOVED TO THE BOTTOM ================= -->
-<!-- ============================================================= -->
-
-<?php mysqli_data_seek($collections, 0); ?>
-<?php while ($col = mysqli_fetch_assoc($collections)): ?>
-
-<!-- VIEW MODAL -->
-<div class="modal fade" id="viewModal_<?php echo $col['pk_collectionID']; ?>" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-
-            <div class="modal-header">
-                <h5 class="modal-title">
-                    Collection: <?php echo e($col['name']); ?>
-                    <small class="text-muted">(ID: <?php echo e($col['pk_collectionID']); ?>)</small>
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-
-            <div class="modal-body">
-                <?php
-                $stmt = mysqli_prepare($conn,
-                    "SELECT m.timestamp, m.temperature, m.humidity, m.airPressure,
-                            m.lightIntensity, m.airQuality
-                     FROM measurement m
-                     JOIN contains c ON m.pk_measurementID = c.pkfk_measurement
-                     WHERE c.pkfk_collection = ?
-                     ORDER BY m.timestamp DESC"
-                );
-                mysqli_stmt_bind_param($stmt, "i", $col['pk_collectionID']);
-                mysqli_stmt_execute($stmt);
-                $data = mysqli_stmt_get_result($stmt);
-                ?>
-
-                <?php if (mysqli_num_rows($data) === 0): ?>
-                    <p class="text-muted">No measurements in this collection.</p>
-                <?php else: ?>
-                    <div class="table-responsive">
-                        <table class="table table-sm table-hover">
-                            <thead>
-                                <tr>
-                                    <th>Timestamp</th>
-                                    <th>Temp</th>
-                                    <th>Humidity</th>
-                                    <th>Pressure</th>
-                                    <th>Light</th>
-                                    <th>Quality</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php while ($m = mysqli_fetch_assoc($data)): ?>
-                                    <tr>
-                                        <td><?php echo formatDateTime($m['timestamp']); ?></td>
-                                        <td><?php echo e($m['temperature']); ?></td>
-                                        <td><?php echo e($m['humidity']); ?></td>
-                                        <td><?php echo e($m['airPressure']); ?></td>
-                                        <td><?php echo e($m['lightIntensity']); ?></td>
-                                        <td><?php echo e($m['airQuality']); ?></td>
-                                    </tr>
-                                <?php endwhile; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                <?php endif; ?>
-
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-            </div>
-
+    <?php if ($viewColl['fk_user'] === $username): ?>
+    <!-- Samples -->
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><?= t('samples') ?></h5>
+            <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addSampleModal"><?= t('add_sample') ?></button>
+        </div>
+        <div class="card-body">
+            <?php $samples = getSamples($conn, $viewId); ?>
+            <?php if (empty($samples)): ?>
+                <p class="text-muted"><?= t('no_measurements') ?></p>
+            <?php else: ?>
+            <table class="table table-sm">
+                <thead><tr><th><?= t('station') ?></th><th><?= t('start_datetime') ?></th><th><?= t('end_datetime') ?></th><th></th></tr></thead>
+                <tbody>
+                <?php foreach ($samples as $s): ?>
+                <tr>
+                    <td><?= e($s['station_name'] ?? $s['fk_station']) ?></td>
+                    <td><?= formatDateTime($s['startDateTime']) ?></td>
+                    <td><?= formatDateTime($s['endDateTime']) ?></td>
+                    <td>
+                        <form method="post" class="d-inline">
+                            <input type="hidden" name="action" value="remove_sample">
+                            <input type="hidden" name="sample_id" value="<?= $s['pk_sampleID'] ?>">
+                            <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                        </form>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+            <?php endif; ?>
         </div>
     </div>
-</div>
 
-
-
-<!-- EDIT MODAL -->
-<div class="modal fade" id="editModal_<?php echo $col['pk_collectionID']; ?>" tabindex="-1" aria-labelledby="editModalLabel_<?php echo $col['pk_collectionID']; ?>" aria-hidden="true">
-  <div class="modal-dialog">
-    <div class="modal-content">
-
-      <form method="POST" action="/api/collections.php">
-        <input type="hidden" name="action" value="collection.edit">
-        <input type="hidden" name="collection_id" value="<?php echo $col['pk_collectionID']; ?>">
-
-        <div class="modal-header">
-          <h5 class="modal-title" id="editModalLabel_<?php echo $col['pk_collectionID']; ?>">
-            Edit Collection
-            <small class="text-muted">#<?php echo e($col['pk_collectionID']); ?></small>
-          </h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-        </div>
-
-        <div class="modal-body">
-          <div class="mb-3">
-            <label class="form-label">New Name *</label>
-            <input
-              type="text"
-              name="new_name"
-              class="form-control"
-              value="<?php echo e($col['name']); ?>"
-              required
-            >
-          </div>
-
-          <div class="mb-3">
-            <label class="form-label">Description</label>
-            <textarea
-              name="new_description"
-              class="form-control"
-              rows="3"
-            ><?php echo e($col['description']); ?></textarea>
-          </div>
-        </div>
-
-        <div class="modal-footer">
-          <button type="submit" class="btn btn-primary">Save changes</button>
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        </div>
-
-      </form>
-
-    </div>
-  </div>
-</div>
-</div>
-</div>
-
-
-
-<!-- SHARE MODAL -->
-<div class="modal fade" id="shareModal_<?php echo $col['pk_collectionID']; ?>" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-
-            <div class="modal-header">
-                <h5 class="modal-title">Share Collection</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-
-            <div class="modal-body">
-
-
-                <form method="POST" action="/api/collections.php" class="mb-3">
-                    <input type="hidden" name="action" value="collection.share">
-                    <input type="hidden" name="collection_id" value="<?php echo $col['pk_collectionID']; ?>">
-
-                    <label class="form-label">Share with Friend</label>
-                    <div class="input-group">
-
-                        <select name="friend" class="form-select" required>
-                            <option value="">-- Select Friend --</option>
-
-                            <?php mysqli_data_seek($friends, 0); ?>
-                            <?php while ($f = mysqli_fetch_assoc($friends)): ?>
-                                <option value="<?php echo e($f['friend_username']); ?>">
-                                    <?php echo e($f['friend_username']); ?>
-                                </option>
-                            <?php endwhile; ?>
-
-                        </select>
-
-                        <button class="btn btn-success">Share</button>
-                    </div>
-                </form>
-
-                <hr>
-
-                <h6>Currently shared with:</h6>
-
-                <?php
-                $stmt = mysqli_prepare($conn, "SELECT pk_user FROM shares WHERE pk_collection = ?");
-                mysqli_stmt_bind_param($stmt, "i", $col['pk_collectionID']);
-                mysqli_stmt_execute($stmt);
-                $shared = mysqli_stmt_get_result($stmt);
-                ?>
-
-                <?php if (mysqli_num_rows($shared) === 0): ?>
-                    <p class="text-muted">Not shared with anyone.</p>
-                <?php else: ?>
-                    <ul class="list-group">
-                        <?php while ($s = mysqli_fetch_assoc($shared)): ?>
-                            <li class="list-group-item d-flex justify-content-between align-items-center">
-                                <?php echo e($s['pk_user']); ?>
-
-                                <form method="POST" action="/api/collections.php">
-                                    <input type="hidden" name="action" value="collection.unshare">
-                                    <input type="hidden" name="collection_id" value="<?php echo $col['pk_collectionID']; ?>">
-                                    <input type="hidden" name="friend" value="<?php echo e($s['pk_user']); ?>">
-                                    <button class="btn btn-sm btn-danger">Unshare</button>
-                                </form>
-                            </li>
-                        <?php endwhile; ?>
-                    </ul>
-                <?php endif; ?>
-
-            </div>
-
+    <!-- Share Management -->
+    <div class="card mb-4">
+        <div class="card-header"><h5 class="mb-0"><?= t('share') ?></h5></div>
+        <div class="card-body">
+            <?php $shares = getCollectionShares($conn, $viewId); ?>
+            <p class="text-muted small"><?= t('shared_with_me') ?>:</p>
+            <?php if ($shares): ?>
+            <ul class="list-group list-group-flush mb-3">
+                <?php foreach ($shares as $sh): ?>
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <?= e($sh['firstName'] . ' ' . $sh['lastName']) ?>
+                    <form method="post" class="d-inline">
+                        <input type="hidden" name="action" value="unshare">
+                        <input type="hidden" name="collection_id" value="<?= $viewId ?>">
+                        <input type="hidden" name="unshare_user" value="<?= e($sh['pk_username']) ?>">
+                        <button type="submit" class="btn btn-sm btn-outline-danger"><?= t('unshare') ?></button>
+                    </form>
+                </li>
+                <?php endforeach; ?>
+            </ul>
+            <?php endif; ?>
+            <?php if ($myFriends): ?>
+            <form method="post" class="d-flex gap-2">
+                <input type="hidden" name="action" value="share">
+                <input type="hidden" name="collection_id" value="<?= $viewId ?>">
+                <select name="share_with" class="form-select form-select-sm">
+                    <?php foreach ($myFriends as $f): ?>
+                    <option value="<?= e($f['pk_username']) ?>"><?= e($f['firstName'] . ' ' . $f['lastName']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <button type="submit" class="btn btn-sm btn-primary"><?= t('share') ?></button>
+            </form>
+            <?php endif; ?>
         </div>
     </div>
-</div>
+    <?php endif; ?>
 
+    <!-- Measurements in collection -->
+    <div class="card">
+        <div class="card-header"><h5 class="mb-0"><?= t('measurements') ?></h5></div>
+        <div class="card-body">
+            <?php $collMeasurements = getCollectionMeasurements($conn, $viewId); ?>
+            <?php if (empty($collMeasurements)): ?>
+                <p class="text-muted"><?= t('no_measurements') ?></p>
+            <?php else: ?>
+            <div class="table-responsive">
+                <table class="table table-sm table-hover">
+                    <thead><tr><th><?= t('timestamp') ?></th><th><?= t('station') ?></th><th><?= t('temperature') ?></th><th><?= t('humidity') ?></th><th><?= t('air_pressure') ?></th></tr></thead>
+                    <tbody>
+                    <?php foreach ($collMeasurements as $m): ?>
+                    <tr>
+                        <td><?= formatDateTime($m['timestamp']) ?></td>
+                        <td><?= e($m['station_name'] ?? $m['fk_station']) ?></td>
+                        <td><?= $m['temperature'] !== null ? e($m['temperature']) . '°C' : '-' ?></td>
+                        <td><?= $m['humidity'] !== null ? e($m['humidity']) . '%' : '-' ?></td>
+                        <td><?= $m['airPressure'] !== null ? e($m['airPressure']) . ' hPa' : '-' ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+            <?php endif; ?>
+        </div>
+    </div>
 
-<!-- DELETE MODAL -->
-<div class="modal fade" id="deleteModal_<?php echo $col['pk_collectionID']; ?>" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-
-            <form method="POST" action="/api/collections.php">
-                <input type="hidden" name="action" value="collection.delete">
-                <input type="hidden" name="collection_id" value="<?php echo $col['pk_collectionID']; ?>">
-
+    <!-- Add Sample Modal -->
+    <div class="modal fade" id="addSampleModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Delete Collection</h5>
+                    <h5 class="modal-title"><?= t('add_sample') ?></h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
-
-                <div class="modal-body">
-                    Are you sure you want to delete
-                    <strong><?php echo e($col['name']); ?></strong>?
-                    <p class="text-danger mt-2">This action cannot be undone.</p>
-                </div>
-
-                <div class="modal-footer">
-                    <button class="btn btn-danger">Delete</button>
-                </div>
-
-            </form>
-
+                <form method="post">
+                    <input type="hidden" name="action" value="add_sample">
+                    <input type="hidden" name="collection_id" value="<?= $viewId ?>">
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label"><?= t('station') ?></label>
+                            <select name="station" class="form-select" required>
+                                <?php foreach ($myStations as $st): ?>
+                                <option value="<?= e($st['pk_serialNumber']) ?>"><?= e($st['name'] ?? $st['pk_serialNumber']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label"><?= t('start_datetime') ?></label>
+                            <input type="datetime-local" name="start" class="form-control" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label"><?= t('end_datetime') ?></label>
+                            <input type="datetime-local" name="end" class="form-control" required>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><?= t('cancel') ?></button>
+                        <button type="submit" class="btn btn-primary"><?= t('add_sample') ?></button>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
-</div>
 
-<?php endwhile; ?>
+<?php else: ?>
+    <!-- Collections list tabs -->
+    <ul class="nav nav-tabs mb-4">
+        <li class="nav-item">
+            <a class="nav-link <?= $activeTab === 'mine' ? 'active' : '' ?>" href="?tab=mine"><?= t('my_collections') ?></a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link <?= $activeTab === 'shared' ? 'active' : '' ?>" href="?tab=shared"><?= t('shared_with_me') ?></a>
+        </li>
+    </ul>
 
-<?php require_once '../includes/footer.php'; ?>
+    <?php if ($activeTab === 'mine'): ?>
+    <div class="d-flex justify-content-end mb-3">
+        <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#createModal">
+            <i class="bi bi-plus-circle me-1"></i><?= t('create') ?>
+        </button>
+    </div>
+    <?php if (empty($myCollections)): ?>
+        <div class="alert alert-info"><?= t('no_collections') ?></div>
+    <?php else: ?>
+    <div class="row g-3">
+        <?php foreach ($myCollections as $c): ?>
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title"><?= e($c['name']) ?></h5>
+                    <p class="card-text text-muted small"><?= e($c['description'] ?? '') ?></p>
+                    <small class="text-muted"><?= formatDateTime($c['createdAt']) ?></small>
+                </div>
+                <div class="card-footer d-flex gap-1">
+                    <a href="?view=<?= $c['pk_collectionID'] ?>" class="btn btn-sm btn-outline-primary"><?= t('view') ?></a>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="editCollection(<?= $c['pk_collectionID'] ?>,'<?= e(addslashes($c['name'])) ?>','<?= e(addslashes($c['description'] ?? '')) ?>')"><?= t('edit') ?></button>
+                    <form method="post" class="d-inline ms-auto">
+                        <input type="hidden" name="action" value="delete">
+                        <input type="hidden" name="collection_id" value="<?= $c['pk_collectionID'] ?>">
+                        <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('<?= t('confirm_delete') ?>')"><?= t('delete') ?></button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <?php endforeach; ?>
+    </div>
+    <?php endif; ?>
+
+    <?php else: ?>
+    <?php if (empty($sharedCollections)): ?>
+        <div class="alert alert-info"><?= t('no_collections') ?></div>
+    <?php else: ?>
+    <div class="row g-3">
+        <?php foreach ($sharedCollections as $c): ?>
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title"><?= e($c['name']) ?></h5>
+                    <p class="card-text text-muted small"><?= e($c['description'] ?? '') ?></p>
+                    <small class="text-muted"><?= t('owner') ?>: <?= e($c['firstName'] . ' ' . $c['lastName']) ?></small>
+                </div>
+                <div class="card-footer">
+                    <a href="?view=<?= $c['pk_collectionID'] ?>" class="btn btn-sm btn-outline-primary"><?= t('view') ?></a>
+                </div>
+            </div>
+        </div>
+        <?php endforeach; ?>
+    </div>
+    <?php endif; ?>
+    <?php endif; ?>
+
+    <!-- Create Modal -->
+    <div class="modal fade" id="createModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><?= t('create') ?> <?= t('collection') ?></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form method="post">
+                    <input type="hidden" name="action" value="create">
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label"><?= t('name') ?></label>
+                            <input type="text" name="name" class="form-control" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label"><?= t('description') ?></label>
+                            <textarea name="description" class="form-control" rows="3"></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><?= t('cancel') ?></button>
+                        <button type="submit" class="btn btn-primary"><?= t('create') ?></button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Modal -->
+    <div class="modal fade" id="editModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><?= t('edit') ?></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form method="post">
+                    <input type="hidden" name="action" value="update">
+                    <input type="hidden" name="collection_id" id="editCollId">
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label"><?= t('name') ?></label>
+                            <input type="text" name="name" id="editCollName" class="form-control" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label"><?= t('description') ?></label>
+                            <textarea name="description" id="editCollDesc" class="form-control" rows="3"></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><?= t('cancel') ?></button>
+                        <button type="submit" class="btn btn-primary"><?= t('save') ?></button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+<?php endif; ?>
+
+<script>
+function editCollection(id, name, desc) {
+    document.getElementById('editCollId').value = id;
+    document.getElementById('editCollName').value = name;
+    document.getElementById('editCollDesc').value = desc;
+    new bootstrap.Modal(document.getElementById('editModal')).show();
+}
+</script>
+<?php require_once __DIR__ . '/../includes/footer.php'; ?>

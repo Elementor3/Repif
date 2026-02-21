@@ -1,174 +1,172 @@
-
 <?php
-// /user/profile.php
-require_once '../config/database.php';
-require_once '../includes/functions.php';
-require_once '../services/users.php';
+require_once __DIR__ . '/../includes/header.php';
+requireLogin();
+require_once __DIR__ . '/../services/users.php';
 
-requireLogin(); // user must be logged in
+$username = $_SESSION['username'];
+$user = getUserByUsername($conn, $username);
+$msg = '';
+$err = '';
 
-$username = $_SESSION['username'] ?? null;
-if (!$username) {
-    header("Location: /auth/login.php");
-    exit();
-}
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = $_POST['action'] ?? '';
 
-// Fetch current user data
-try {
-    $currentUser = svc_getUserByUsername($conn, $username);
-    if (!$currentUser) {
-        throw new RuntimeException("User account not found.");
+    if ($action === 'update_profile') {
+        $fn = trim($_POST['firstName'] ?? '');
+        $ln = trim($_POST['lastName'] ?? '');
+        $em = trim($_POST['email'] ?? '');
+        if ($fn && $ln && $em) {
+            if (updateUserProfile($conn, $username, $fn, $ln, $em)) {
+                $_SESSION['full_name'] = $fn . ' ' . $ln;
+                $_SESSION['firstName'] = $fn;
+                $_SESSION['lastName'] = $ln;
+                $msg = t('success');
+                $user = getUserByUsername($conn, $username);
+            } else {
+                $err = t('error_occurred');
+            }
+        } else {
+            $err = t('error_occurred');
+        }
+
+    } elseif ($action === 'change_password') {
+        $current = $_POST['current_password'] ?? '';
+        $new = $_POST['new_password'] ?? '';
+        $confirm = $_POST['confirm_password'] ?? '';
+        if (!password_verify($current, $user['password_hash'])) {
+            $err = 'Current password is incorrect';
+        } elseif (strlen($new) < 6) {
+            $err = 'New password must be at least 6 characters';
+        } elseif ($new !== $confirm) {
+            $err = 'Passwords do not match';
+        } else {
+            $hash = password_hash($new, PASSWORD_DEFAULT);
+            updateUserPassword($conn, $username, $hash);
+            $msg = t('password_reset_success');
+        }
+
+    } elseif ($action === 'set_avatar') {
+        $avatar = $_POST['avatar'] ?? '';
+        $allowed = [];
+        for ($i = 1; $i <= 12; $i++) $allowed[] = "avatar_$i.svg";
+        if (in_array($avatar, $allowed)) {
+            updateUserAvatar($conn, $username, $avatar);
+            $_SESSION['avatar'] = $avatar;
+            $msg = t('success');
+        }
     }
-} catch (Throwable $e) {
-    $currentUser = null;
-    $loadError = $e->getMessage();
 }
-
-$pageTitle = "My Profile";
-require_once '../includes/header.php';
 ?>
+<h2 class="mb-4"><i class="bi bi-person-circle me-2"></i><?= t('profile') ?></h2>
 
-<div class="container mt-4">
+<?php if ($msg): ?><?= showSuccess($msg) ?><?php endif; ?>
+<?php if ($err): ?><?= showError($err) ?><?php endif; ?>
 
-    <h1 class="h3 mb-4">My Profile</h1>
-
-    <!-- Error from loading user -->
-    <?php if (!empty($loadError ?? '')): ?>
-        <div class="alert alert-danger">
-            <?= e($loadError) ?>
+<div class="row g-4">
+    <!-- Profile info -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header"><h5 class="mb-0"><?= t('update_profile') ?></h5></div>
+            <div class="card-body">
+                <form method="post">
+                    <input type="hidden" name="action" value="update_profile">
+                    <div class="mb-3">
+                        <label class="form-label"><?= t('username') ?></label>
+                        <input type="text" class="form-control" value="<?= e($username) ?>" disabled>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label"><?= t('first_name') ?></label>
+                        <input type="text" name="firstName" class="form-control" required value="<?= e($user['firstName'] ?? '') ?>">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label"><?= t('last_name') ?></label>
+                        <input type="text" name="lastName" class="form-control" required value="<?= e($user['lastName'] ?? '') ?>">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label"><?= t('email') ?></label>
+                        <input type="email" name="email" class="form-control" required value="<?= e($user['email'] ?? '') ?>">
+                    </div>
+                    <button type="submit" class="btn btn-primary"><?= t('save') ?></button>
+                </form>
+            </div>
         </div>
-    <?php endif; ?>
+    </div>
 
-    <!-- Error messages from API -->
-    <?php if (!empty($_GET['error'])): ?>
-        <div class="alert alert-danger alert-dismissible fade show" role="alert">
-            <?= e($_GET['error']) ?>
-            <button class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    <?php endif; ?>
-
-    <!-- Profile updated -->
-    <?php if (!empty($_GET['updated'])): ?>
-        <div class="alert alert-success alert-dismissible fade show" role="alert">
-            Profile updated successfully.
-            <button class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    <?php endif; ?>
-
-    <!-- Password changed -->
-    <?php if (!empty($_GET['pwd_changed'])): ?>
-        <div class="alert alert-success alert-dismissible fade show" role="alert">
-            Password changed successfully.
-            <button class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    <?php endif; ?>
-
-    <?php if ($currentUser): ?>
-
-    <div class="row">
-
-        <!-- PROFILE INFO -->
-        <div class="col-md-6 mb-4">
-            <div class="card shadow-sm">
-                <div class="card-header">
-                    <h5 class="mb-0">Profile Information</h5>
-                </div>
-                <div class="card-body">
-
-                    <form action="/api/users.php" method="POST">
-                        <input type="hidden" name="action" value="user.profile.update">
-
-                        <!-- Username -->
-                        <div class="mb-3">
-                            <label class="form-label">Username</label>
-                            <input type="text"
-                                   class="form-control"
-                                   value="<?= e($currentUser['pk_username']) ?>"
-                                   disabled>
-                        </div>
-
-                        <!-- First name -->
-                        <div class="mb-3">
-                            <label class="form-label">First name</label>
-                            <input type="text"
-                                   class="form-control"
-                                   name="firstName"
-                                   maxlength="100"
-                                   required
-                                   value="<?= e($currentUser['firstName']) ?>">
-                        </div>
-
-                        <!-- Last name -->
-                        <div class="mb-3">
-                            <label class="form-label">Last name</label>
-                            <input type="text"
-                                   class="form-control"
-                                   name="lastName"
-                                   maxlength="100"
-                                   required
-                                   value="<?= e($currentUser['lastName']) ?>">
-                        </div>
-
-                        <!-- Email -->
-                        <div class="mb-3">
-                            <label class="form-label">Email</label>
-                            <input type="email"
-                                   class="form-control"
-                                   name="email"
-                                   maxlength="100"
-                                   required
-                                   value="<?= e($currentUser['email']) ?>">
-                        </div>
-
-                        <button class="btn btn-primary" type="submit">Save changes</button>
-                    </form>
-
-                </div>
+    <!-- Password change -->
+    <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-header"><h5 class="mb-0"><?= t('change_password') ?></h5></div>
+            <div class="card-body">
+                <form method="post">
+                    <input type="hidden" name="action" value="change_password">
+                    <div class="mb-3">
+                        <label class="form-label"><?= t('current_password') ?></label>
+                        <input type="password" name="current_password" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label"><?= t('new_password') ?></label>
+                        <input type="password" name="new_password" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label"><?= t('confirm_password') ?></label>
+                        <input type="password" name="confirm_password" class="form-control" required>
+                    </div>
+                    <button type="submit" class="btn btn-warning"><?= t('change_password') ?></button>
+                </form>
             </div>
         </div>
 
-
-        <!-- CHANGE PASSWORD -->
-        <div class="col-md-6 mb-4">
-            <div class="card shadow-sm">
-                <div class="card-header">
-                    <h5 class="mb-0">Change Password</h5>
-                </div>
-                <div class="card-body">
-
-                    <form action="/api/users.php" method="POST">
-                        <input type="hidden" name="action" value="user.password.change">
-
-                        <!-- New password -->
-                        <div class="mb-3">
-                            <label class="form-label">New password</label>
-                            <input type="password"
-                                   class="form-control"
-                                   name="new_password"
-                                   required
-                                   autocomplete="new-password">
-                        </div>
-
-                        <!-- Confirm password -->
-                        <div class="mb-3">
-                            <label class="form-label">Confirm new password</label>
-                            <input type="password"
-                                   class="form-control"
-                                   name="new_password_confirm"
-                                   required
-                                   autocomplete="new-password">
-                        </div>
-
-                        <button class="btn btn-primary" type="submit">Change password</button>
-                    </form>
-
-                </div>
+        <!-- Preferences -->
+        <div class="card">
+            <div class="card-header"><h5 class="mb-0"><?= t('language') ?> / <?= t('theme') ?></h5></div>
+            <div class="card-body">
+                <form method="post" action="/api/profile.php" class="mb-3">
+                    <input type="hidden" name="action" value="set_locale">
+                    <label class="form-label"><?= t('language') ?></label>
+                    <div class="input-group">
+                        <select name="locale" class="form-select">
+                            <option value="en" <?= ($_SESSION['locale'] ?? 'en') === 'en' ? 'selected' : '' ?>>English</option>
+                            <option value="fr" <?= ($_SESSION['locale'] ?? 'en') === 'fr' ? 'selected' : '' ?>>Français</option>
+                            <option value="uk" <?= ($_SESSION['locale'] ?? 'en') === 'uk' ? 'selected' : '' ?>>Українська</option>
+                        </select>
+                        <button type="submit" class="btn btn-outline-secondary"><?= t('save') ?></button>
+                    </div>
+                </form>
+                <button class="btn btn-outline-secondary w-100" id="themeToggleBtn">
+                    <i class="bi bi-moon-fill me-2"></i><?= t('theme') ?>: <?= t($_SESSION['theme'] ?? 'light') ?>
+                </button>
             </div>
         </div>
+    </div>
 
-    </div><!-- /.row -->
-
-    <?php endif; ?>
+    <!-- Avatar selector -->
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header"><h5 class="mb-0"><?= t('choose_avatar') ?></h5></div>
+            <div class="card-body">
+                <form method="post" id="avatarForm">
+                    <input type="hidden" name="action" value="set_avatar">
+                    <input type="hidden" name="avatar" id="selectedAvatar" value="">
+                    <div class="avatar-grid mb-3">
+                        <?php for ($i = 1; $i <= 12; $i++): ?>
+                        <div class="avatar-option <?= ($user['avatar'] ?? '') === "avatar_$i.svg" ? 'selected' : '' ?>"
+                             data-avatar="avatar_<?= $i ?>.svg" onclick="selectAvatar(this)">
+                            <img src="/assets/avatars/presets/avatar_<?= $i ?>.svg" alt="Avatar <?= $i ?>">
+                        </div>
+                        <?php endfor; ?>
+                    </div>
+                    <button type="submit" class="btn btn-primary"><?= t('save') ?></button>
+                </form>
+            </div>
+        </div>
+    </div>
 </div>
 
-<?php require_once '../includes/footer.php'; ?>
+<script>
+function selectAvatar(el) {
+    document.querySelectorAll('.avatar-option').forEach(e => e.classList.remove('selected'));
+    el.classList.add('selected');
+    document.getElementById('selectedAvatar').value = el.dataset.avatar;
+}
+</script>
+<?php require_once __DIR__ . '/../includes/footer.php'; ?>

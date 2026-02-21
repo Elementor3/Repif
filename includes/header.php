@@ -1,90 +1,132 @@
 <?php
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
+require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/functions.php';
+require_once __DIR__ . '/i18n.php';
+
+$theme = $_SESSION['theme'] ?? 'light';
+$locale = $_SESSION['locale'] ?? 'en';
+$unreadCount = 0;
+if (isLoggedIn()) {
+    $unreadCount = getUnreadNotificationCount($conn, $_SESSION['username']);
 }
+$currentPage = basename($_SERVER['PHP_SELF']);
 ?>
 <!DOCTYPE html>
-<html lang="en">
+<html lang="<?= e($locale) ?>" data-bs-theme="<?= e($theme) ?>">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo isset($pageTitle) ? e($pageTitle) : 'Station Management'; ?></title>
-
-    <!-- Bootstrap 5 JS Bundle -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    
-    <!-- jQuery -->
-    <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
-    
-    <!-- Custom JS -->
-    <script src="/assets/js/main.js"></script>
-    
-    <!-- Bootstrap 5 CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    
-    <!-- Custom CSS -->
-    <link rel="stylesheet" href="../assets/css/style.css">
+    <title>WeatherStation</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.min.css">
+    <link rel="stylesheet" href="/assets/css/style.css">
 </head>
 <body>
-    <!-- Navigation -->
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-        <div class="container-fluid">
-            <a class="navbar-brand" href=""><?php echo e($_SESSION['full_name'] ?? ''); ?></a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <?php if (isLoggedIn()): ?>
-                <ul class="navbar-nav me-auto">
-                    <li class="nav-item">
-                        <a class="nav-link" href="../user/dashboard.php">Dashboard</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="../user/stations.php">My Stations</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="../user/measurements.php">Measurements</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="../user/collections.php">Collections</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="../user/shared.php">Shared with Me</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="../user/friends.php">Friends</a>
-                    </li>
-                    <?php if (isAdmin()): ?>
-                    <li class="nav-item">
-                        <a class="nav-link text-warning" href="../admin/panel.php">Admin Panel</a>
-                    </li>
-                    <?php endif; ?>
-                </ul>
-                <ul class="navbar-nav">
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown">
-                            <?php echo e($_SESSION['username']); ?>
-                        </a>
-                        <ul class="dropdown-menu dropdown-menu-end">
-                            <li><a class="dropdown-item" href="../user/profile.php">Profile</a></li>
-                            <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item" href="../auth/logout.php">Logout</a></li>
-                        </ul>
-                    </li>
-                </ul>
-                <?php else: ?>
-                <ul class="navbar-nav ms-auto">
-                    <li class="nav-item">
-                        <a class="nav-link" href="../auth/login.php">Login</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="../auth/register.php">Register</a>
-                    </li>
-                </ul>
+<nav class="navbar navbar-expand-lg fixed-top navbar-themed">
+    <div class="container">
+        <a class="navbar-brand fw-bold" href="/user/dashboard.php">
+            <i class="bi bi-cloud-sun-fill text-primary"></i> WeatherStation
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarMain">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarMain">
+            <?php if (isLoggedIn()): ?>
+            <ul class="navbar-nav me-auto">
+                <li class="nav-item">
+                    <a class="nav-link <?= $currentPage === 'dashboard.php' ? 'active' : '' ?>" href="/user/dashboard.php">
+                        <i class="bi bi-speedometer2"></i> <?= t('dashboard') ?>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link <?= $currentPage === 'stations.php' ? 'active' : '' ?>" href="/user/stations.php">
+                        <i class="bi bi-broadcast-pin"></i> <?= t('stations') ?>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link <?= $currentPage === 'measurements.php' ? 'active' : '' ?>" href="/user/measurements.php">
+                        <i class="bi bi-graph-up"></i> <?= t('measurements') ?>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link <?= $currentPage === 'collections.php' ? 'active' : '' ?>" href="/user/collections.php">
+                        <i class="bi bi-collection"></i> <?= t('collections') ?>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link <?= $currentPage === 'friends.php' ? 'active' : '' ?>" href="/user/friends.php">
+                        <i class="bi bi-people"></i> <?= t('friends') ?>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link <?= $currentPage === 'chat.php' ? 'active' : '' ?>" href="/user/chat.php">
+                        <i class="bi bi-chat-dots"></i> <?= t('chat') ?>
+                    </a>
+                </li>
+                <?php if (isAdmin()): ?>
+                <li class="nav-item">
+                    <a class="nav-link <?= $currentPage === 'panel.php' ? 'active' : '' ?>" href="/admin/panel.php">
+                        <i class="bi bi-shield-lock"></i> <?= t('admin_panel') ?>
+                    </a>
+                </li>
                 <?php endif; ?>
-            </div>
+            </ul>
+            <ul class="navbar-nav align-items-center gap-2">
+                <li class="nav-item dropdown">
+                    <a class="nav-link position-relative" href="#" id="notifDropdown" data-bs-toggle="dropdown">
+                        <i class="bi bi-bell fs-5"></i>
+                        <span class="badge bg-danger rounded-pill notif-badge position-absolute top-0 start-100 translate-middle <?= $unreadCount === 0 ? 'd-none' : '' ?>" id="notifBadge">
+                            <?= $unreadCount ?>
+                        </span>
+                    </a>
+                    <div class="dropdown-menu dropdown-menu-end notif-dropdown p-0" id="notifDropdownMenu" style="min-width:320px;max-width:360px;">
+                        <div class="d-flex justify-content-between align-items-center px-3 py-2 border-bottom">
+                            <strong><?= t('notifications') ?></strong>
+                            <a href="#" class="small text-muted" id="markAllReadBtn"><?= t('mark_all_read') ?></a>
+                        </div>
+                        <div id="notifList" style="max-height:300px;overflow-y:auto;">
+                            <div class="text-center text-muted py-3"><?= t('no_notifications') ?></div>
+                        </div>
+                    </div>
+                </li>
+                <li class="nav-item">
+                    <form method="post" action="/api/profile.php" class="d-inline" id="localeSwitcherForm">
+                        <input type="hidden" name="action" value="set_locale">
+                        <select name="locale" class="form-select form-select-sm" onchange="this.form.submit()" style="width:auto;">
+                            <option value="en" <?= $locale === 'en' ? 'selected' : '' ?>>EN</option>
+                            <option value="fr" <?= $locale === 'fr' ? 'selected' : '' ?>>FR</option>
+                            <option value="uk" <?= $locale === 'uk' ? 'selected' : '' ?>>UK</option>
+                        </select>
+                    </form>
+                </li>
+                <li class="nav-item">
+                    <button class="btn btn-link nav-link" id="themeToggleBtn" title="Toggle theme">
+                        <i class="bi <?= $theme === 'dark' ? 'bi-sun-fill' : 'bi-moon-fill' ?>" id="themeIcon"></i>
+                    </button>
+                </li>
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">
+                        <?php if (!empty($_SESSION['avatar'])): ?>
+                            <img src="/assets/avatars/presets/<?= e($_SESSION['avatar']) ?>" class="rounded-circle me-1" width="24" height="24" alt="avatar">
+                        <?php else: ?>
+                            <i class="bi bi-person-circle"></i>
+                        <?php endif; ?>
+                        <?= e($_SESSION['full_name'] ?? $_SESSION['username']) ?>
+                    </a>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item" href="/user/profile.php"><i class="bi bi-person me-2"></i><?= t('profile') ?></a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item text-danger" href="/auth/logout.php"><i class="bi bi-box-arrow-right me-2"></i><?= t('logout') ?></a></li>
+                    </ul>
+                </li>
+            </ul>
+            <?php else: ?>
+            <ul class="navbar-nav ms-auto">
+                <li class="nav-item"><a class="nav-link" href="/auth/login.php"><?= t('login') ?></a></li>
+                <li class="nav-item"><a class="nav-link" href="/auth/register.php"><?= t('register') ?></a></li>
+            </ul>
+            <?php endif; ?>
         </div>
-    </nav>
-
-    <!-- Main Content -->
-    <div class="container mt-4">
+    </div>
+</nav>
+<div class="container mt-5 pt-3">

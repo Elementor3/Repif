@@ -1,184 +1,92 @@
-
 <?php
-
-/*
- * Returns measurements for the admin area with optional filters and pagination.
- *
- * @param mysqli      $conn          DB connection
- * @param string|null $stationSerial Station serial (fk_station) or null (no filter)
- * @param string|null $startDateTime MySQL DATETIME "YYYY-MM-DD HH:MM:SS" or null
- * @param string|null $endDateTime   MySQL DATETIME "YYYY-MM-DD HH:MM:SS" or null
- * @param int         $limit         Max number of rows to return
- * @param int         $offset        Offset for pagination
- *
- * @return array<int,array<string,mixed>>
- */
-function svc_adminGetMeasurements(
-    mysqli $conn,
-    ?string $stationSerial,
-    ?string $startDateTime,
-    ?string $endDateTime,
-    int $limit,
-    int $offset
-): array {
-    $sql = "
-        SELECT
-            pk_measurementID,
-            `timestamp`,
-            temperature,
-            humidity,
-            airPressure,
-            lightIntensity,
-            airQuality,
-            fk_station
-        FROM measurement
-        WHERE 1=1
-    ";
-
+function buildMeasurementWhere(array $filters): array {
+    $where = [];
+    $types = '';
     $params = [];
-    $types  = '';
-
-    if ($stationSerial !== null && $stationSerial !== '') {
-        $sql     .= " AND fk_station = ?";
-        $params[] = $stationSerial;
-        $types   .= 's';
+    if (!empty($filters['station'])) {
+        $where[] = "m.fk_station = ?";
+        $types .= 's';
+        $params[] = $filters['station'];
     }
-
-    if ($startDateTime !== null && $startDateTime !== '') {
-        $sql     .= " AND `timestamp` >= ?";
-        $params[] = $startDateTime;
-        $types   .= 's';
+    if (!empty($filters['date_from'])) {
+        $where[] = "m.timestamp >= ?";
+        $types .= 's';
+        $params[] = $filters['date_from'];
     }
-
-    if ($endDateTime !== null && $endDateTime !== '') {
-        $sql     .= " AND `timestamp` <= ?";
-        $params[] = $endDateTime;
-        $types   .= 's';
+    if (!empty($filters['date_to'])) {
+        $where[] = "m.timestamp <= ?";
+        $types .= 's';
+        $params[] = $filters['date_to'];
     }
-
-    $sql     .= " ORDER BY `timestamp` DESC LIMIT ? OFFSET ?";
-    $params[] = $limit;
-    $types   .= 'i';
-    $params[] = $offset;
-    $types   .= 'i';
-
-    $stmt = mysqli_prepare($conn, $sql);
-    if (!$stmt) {
-        throw new RuntimeException('Failed to prepare measurement query: ' . mysqli_error($conn));
+    if (isset($filters['temp_min']) && $filters['temp_min'] !== '') {
+        $where[] = "m.temperature >= ?";
+        $types .= 'd';
+        $params[] = (float)$filters['temp_min'];
     }
-
-    mysqli_stmt_bind_param($stmt, $types, ...$params);
-
-    if (!mysqli_stmt_execute($stmt)) {
-        $err = mysqli_error($conn);
-        mysqli_stmt_close($stmt);
-        throw new RuntimeException('Failed to execute measurement query: ' . $err);
+    if (isset($filters['temp_max']) && $filters['temp_max'] !== '') {
+        $where[] = "m.temperature <= ?";
+        $types .= 'd';
+        $params[] = (float)$filters['temp_max'];
     }
-
-    $result = mysqli_stmt_get_result($stmt);
-    $rows   = [];
-
-    if ($result) {
-        while ($row = mysqli_fetch_assoc($result)) {
-            $rows[] = $row;
-        }
-        mysqli_free_result($result);
-    }
-
-    mysqli_stmt_close($stmt);
-
-    return $rows;
+    $sql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
+    return [$sql, $types, $params];
 }
 
-/*
- * Returns total count of measurements for the given filters (used for pagination).
- */
-function svc_adminCountMeasurements(
-    mysqli $conn,
-    ?string $stationSerial,
-    ?string $startDateTime,
-    ?string $endDateTime
-): int {
-    $sql = "
-        SELECT COUNT(*) AS cnt
-        FROM measurement
-        WHERE 1=1
-    ";
-
-    $params = [];
-    $types  = '';
-
-    if ($stationSerial !== null && $stationSerial !== '') {
-        $sql     .= " AND fk_station = ?";
-        $params[] = $stationSerial;
-        $types   .= 's';
-    }
-
-    if ($startDateTime !== null && $startDateTime !== '') {
-        $sql     .= " AND `timestamp` >= ?";
-        $params[] = $startDateTime;
-        $types   .= 's';
-    }
-
-    if ($endDateTime !== null && $endDateTime !== '') {
-        $sql     .= " AND `timestamp` <= ?";
-        $params[] = $endDateTime;
-        $types   .= 's';
-    }
-
-    $stmt = mysqli_prepare($conn, $sql);
-    if (!$stmt) {
-        throw new RuntimeException('Failed to prepare measurement count query: ' . mysqli_error($conn));
-    }
-
-    if ($types !== '') {
-        mysqli_stmt_bind_param($stmt, $types, ...$params);
-    }
-
-    if (!mysqli_stmt_execute($stmt)) {
-        $err = mysqli_error($conn);
-        mysqli_stmt_close($stmt);
-        throw new RuntimeException('Failed to execute measurement count query: ' . $err);
-    }
-
-    $result = mysqli_stmt_get_result($stmt);
-    $count  = 0;
-
-    if ($result) {
-        $row   = mysqli_fetch_assoc($result);
-        $count = (int)($row['cnt'] ?? 0);
-        mysqli_free_result($result);
-    }
-
-    mysqli_stmt_close($stmt);
-
-    return $count;
+function getMeasurements(mysqli $conn, array $filters, int $page, int $perPage): array {
+    [$where, $types, $params] = buildMeasurementWhere($filters);
+    $offset = ($page - 1) * $perPage;
+    $sql = "SELECT m.*, s.name AS station_name FROM measurement m LEFT JOIN station s ON m.fk_station = s.pk_serialNumber $where ORDER BY m.timestamp DESC LIMIT ? OFFSET ?";
+    $stmt = $conn->prepare($sql);
+    $allTypes = $types . 'ii';
+    $allParams = array_merge($params, [$perPage, $offset]);
+    $stmt->bind_param($allTypes, ...$allParams);
+    $stmt->execute();
+    return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 }
 
-/*
- * Deletes a single measurement by ID (admin only).
- */
-function svc_adminDeleteMeasurement(mysqli $conn, int $measurementId): void
-{
-    if ($measurementId <= 0) {
-        throw new RuntimeException('Invalid measurement ID.');
+function countMeasurements(mysqli $conn, array $filters): int {
+    [$where, $types, $params] = buildMeasurementWhere($filters);
+    $sql = "SELECT COUNT(*) AS cnt FROM measurement m $where";
+    $stmt = $conn->prepare($sql);
+    if ($types && $params) {
+        $stmt->bind_param($types, ...$params);
     }
-
-    $stmt = mysqli_prepare(
-        $conn,
-        "DELETE FROM measurement WHERE pk_measurementID = ?"
-    );
-    if (!$stmt) {
-        throw new RuntimeException('Failed to prepare delete measurement statement: ' . mysqli_error($conn));
-    }
-
-    mysqli_stmt_bind_param($stmt, 'i', $measurementId);
-
-    if (!mysqli_stmt_execute($stmt)) {
-        $err = mysqli_error($conn);
-        mysqli_stmt_close($stmt);
-        throw new RuntimeException('Failed to delete measurement: ' . $err);
-    }
-
-    mysqli_stmt_close($stmt);
+    $stmt->execute();
+    return (int)$stmt->get_result()->fetch_assoc()['cnt'];
 }
+
+function getLatestMeasurementByStation(mysqli $conn, string $stationSerial): ?array {
+    $stmt = $conn->prepare("SELECT * FROM measurement WHERE fk_station = ? ORDER BY timestamp DESC LIMIT 1");
+    $stmt->bind_param("s", $stationSerial);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    return $row ?: null;
+}
+
+function getChartData(mysqli $conn, array $filters): array {
+    [$where, $types, $params] = buildMeasurementWhere($filters);
+    $sql = "SELECT timestamp, temperature, humidity, airPressure, lightIntensity, airQuality FROM measurement m $where ORDER BY m.timestamp ASC LIMIT 500";
+    $stmt = $conn->prepare($sql);
+    if ($types && $params) {
+        $stmt->bind_param($types, ...$params);
+    }
+    $stmt->execute();
+    return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+}
+
+function exportCsv(mysqli $conn, array $filters): string {
+    [$where, $types, $params] = buildMeasurementWhere($filters);
+    $sql = "SELECT m.pk_measurementID, m.timestamp, m.temperature, m.humidity, m.airPressure, m.lightIntensity, m.airQuality, m.fk_station, s.name AS station_name FROM measurement m LEFT JOIN station s ON m.fk_station = s.pk_serialNumber $where ORDER BY m.timestamp DESC";
+    $stmt = $conn->prepare($sql);
+    if ($types && $params) {
+        $stmt->bind_param($types, ...$params);
+    }
+    $stmt->execute();
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $csv = "ID,Timestamp,Temperature,Humidity,AirPressure,LightIntensity,AirQuality,Station,StationName\n";
+    foreach ($rows as $row) {
+        $csv .= implode(',', array_map(fn($v) => '"' . str_replace('"', '""', (string)$v) . '"', $row)) . "\n";
+    }
+    return $csv;
+}
+?>

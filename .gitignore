@@ -1,0 +1,9 @@
+uploads/chat/*
+!uploads/chat/.gitkeep
+assets/avatars/uploads/*
+!assets/avatars/uploads/.gitkeep
+*.log
+.DS_Store
+Thumbs.db
+/vendor/
+.env
