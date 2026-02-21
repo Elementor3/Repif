@@ -223,7 +223,7 @@ function appendMessage(m) {
     if (!isOwn) html += '<small class="text-muted d-block mb-1">' + $('<div>').text(m.firstName + ' ' + m.lastName).html() + '</small>';
     html += '<div class="bubble">';
     if (m.file_name) {
-        html += '<a href="/uploads/chat/' + encodeURIComponent(m.file_path) + '" target="_blank" class="text-white d-block"><i class="bi bi-file-earmark me-1"></i>' + $('<div>').text(m.file_name).html() + '</a>';
+        html += '<a href="/uploads/chat/' + encodeURIComponent(m.file_path.replace(/.*[\\/]/, '')) + '" target="_blank" class="text-white d-block"><i class="bi bi-file-earmark me-1"></i>' + $('<div>').text(m.file_name).html() + '</a>';
     } else {
         html += $('<div>').text(m.message || '').html();
     }

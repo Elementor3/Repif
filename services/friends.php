@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/collections.php';
+
 function getFriends(mysqli $conn, string $username): array {
     $stmt = $conn->prepare("SELECT u.* FROM friendship f JOIN user u ON (CASE WHEN f.pk_user1 = ? THEN f.pk_user2 ELSE f.pk_user1 END) = u.pk_username WHERE f.pk_user1 = ? OR f.pk_user2 = ?");
     $stmt->bind_param("sss", $username, $username, $username);
@@ -59,7 +61,6 @@ function removeFriend(mysqli $conn, string $user1, string $user2): bool {
     $stmt->bind_param("ss", $a, $b);
     $ok = $stmt->execute();
     if ($ok) {
-        require_once __DIR__ . '/collections.php';
         unshareAllBetweenUsers($conn, $user1, $user2);
     }
     return $ok;
