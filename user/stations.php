@@ -75,7 +75,7 @@ $stations = getUserStationsList($conn, $username);
             <td><?= e($st['description'] ?? '') ?></td>
             <td><?= formatDateTime($st['registeredAt'] ?? null) ?></td>
             <td>
-                <button class="btn btn-sm btn-outline-primary" onclick="editStation('<?= e($st['pk_serialNumber']) ?>','<?= e(addslashes($st['name'] ?? '')) ?>','<?= e(addslashes($st['description'] ?? '')) ?>')">
+                <button class="btn btn-sm btn-outline-primary" onclick="editStation(<?= htmlspecialchars(json_encode($st['pk_serialNumber']), ENT_QUOTES) ?>,<?= htmlspecialchars(json_encode($st['name'] ?? ''), ENT_QUOTES) ?>,<?= htmlspecialchars(json_encode($st['description'] ?? ''), ENT_QUOTES) ?>)">
                     <i class="bi bi-pencil"></i>
                 </button>
                 <a href="/user/measurements.php?station=<?= urlencode($st['pk_serialNumber']) ?>" class="btn btn-sm btn-outline-secondary">

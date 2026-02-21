@@ -34,7 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $new = $_POST['new_password'] ?? '';
         $confirm = $_POST['confirm_password'] ?? '';
         if (!password_verify($current, $user['password_hash'])) {
-            $err = 'Current password is incorrect';
+            $err = t('invalid_credentials');
         } elseif (strlen($new) < 6) {
             $err = 'New password must be at least 6 characters';
         } elseif ($new !== $confirm) {

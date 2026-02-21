@@ -18,7 +18,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt = $conn->prepare("INSERT INTO password_reset (fk_user, token, expiresAt) VALUES (?,?,?)");
             $stmt->bind_param("sss", $user['pk_username'], $token, $expires);
             $stmt->execute();
-            $resetLink = 'http://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . '/auth/reset_password.php?token=' . $token;
+    $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+            $resetLink = $protocol . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . '/auth/reset_password.php?token=' . $token;
             sendEmail($email, 'Reset your password', '<p>Click <a href="' . htmlspecialchars($resetLink) . '">here</a> to reset your password. Link expires in 1 hour.</p>');
         }
     }

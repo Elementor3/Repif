@@ -273,7 +273,7 @@ $myFriends = getFriends($conn, $username);
                 </div>
                 <div class="card-footer d-flex gap-1">
                     <a href="?view=<?= $c['pk_collectionID'] ?>" class="btn btn-sm btn-outline-primary"><?= t('view') ?></a>
-                    <button class="btn btn-sm btn-outline-secondary" onclick="editCollection(<?= $c['pk_collectionID'] ?>,'<?= e(addslashes($c['name'])) ?>','<?= e(addslashes($c['description'] ?? '')) ?>')"><?= t('edit') ?></button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="editCollection(<?= $c['pk_collectionID'] ?>,<?= htmlspecialchars(json_encode($c['name']), ENT_QUOTES) ?>,<?= htmlspecialchars(json_encode($c['description'] ?? ''), ENT_QUOTES) ?>)"><?= t('edit') ?></button>
                     <form method="post" class="d-inline ms-auto">
                         <input type="hidden" name="action" value="delete">
                         <input type="hidden" name="collection_id" value="<?= $c['pk_collectionID'] ?>">
