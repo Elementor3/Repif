@@ -16,8 +16,10 @@ if (!$data) {
 $serial = trim($data['serial'] ?? $data['station'] ?? '');
 $temperature = isset($data['temperature']) ? (float)$data['temperature'] : null;
 $humidity = isset($data['humidity']) ? (float)$data['humidity'] : null;
-$airPressure = isset($data['airPressure'] ?? $data['air_pressure'] ?? '') ? (float)($data['airPressure'] ?? $data['air_pressure']) : null;
-$lightIntensity = isset($data['lightIntensity'] ?? $data['light_intensity'] ?? '') ? (float)($data['lightIntensity'] ?? $data['light_intensity']) : null;
+$airPressureRaw = $data['airPressure'] ?? $data['air_pressure'] ?? null;
+$airPressure = $airPressureRaw !== null ? (float)$airPressureRaw : null;
+$lightIntensityRaw = $data['lightIntensity'] ?? $data['light_intensity'] ?? null;
+$lightIntensity = $lightIntensityRaw !== null ? (float)$lightIntensityRaw : null;
 $airQuality = $data['airQuality'] ?? $data['air_quality'] ?? null;
 $timestamp = $data['timestamp'] ?? date('Y-m-d H:i:s');
 
