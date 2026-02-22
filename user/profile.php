@@ -1,7 +1,9 @@
 <?php
-require_once __DIR__ . '/../includes/header.php';
-requireLogin();
+require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/i18n.php';
 require_once __DIR__ . '/../services/users.php';
+requireLogin();
 
 $username = $_SESSION['username'];
 $user = getUserByUsername($conn, $username);
@@ -56,6 +58,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 }
+
+require_once __DIR__ . '/../includes/header.php';
 ?>
 <h2 class="mb-4"><i class="bi bi-person-circle me-2"></i><?= t('profile') ?></h2>
 

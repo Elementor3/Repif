@@ -1,10 +1,12 @@
 <?php
-require_once __DIR__ . '/../includes/header.php';
-requireLogin();
+require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/i18n.php';
 require_once __DIR__ . '/../services/collections.php';
 require_once __DIR__ . '/../services/stations.php';
 require_once __DIR__ . '/../services/friends.php';
 require_once __DIR__ . '/../services/notifications.php';
+requireLogin();
 
 $username = $_SESSION['username'];
 $msg = '';
@@ -62,7 +64,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             createNotification($conn, $withUser, 'collection_shared', t('collection_shared'), $_SESSION['full_name'] . ' shared collection: ' . $coll['name'], '/user/collections.php');
             $msg = t('success');
         } else {
-            $err = 'Can only share with friends';
+            $err = t('can_only_share_with_friends');
         }
     } elseif ($action === 'unshare') {
         $id = (int)($_POST['collection_id'] ?? 0);
@@ -74,6 +76,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 }
+
+require_once __DIR__ . '/../includes/header.php';
 
 $activeTab = $_GET['tab'] ?? 'mine';
 $viewId = isset($_GET['view']) ? (int)$_GET['view'] : 0;

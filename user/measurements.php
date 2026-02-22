@@ -1,8 +1,10 @@
 <?php
-require_once __DIR__ . '/../includes/header.php';
-requireLogin();
+require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/i18n.php';
 require_once __DIR__ . '/../services/measurements.php';
 require_once __DIR__ . '/../services/stations.php';
+requireLogin();
 
 $username = $_SESSION['username'];
 $myStations = getUserStationsList($conn, $username);
@@ -21,11 +23,7 @@ if ($filters['station'] && !in_array($filters['station'], array_column($myStatio
     $filters['station'] = '';
 }
 
-$page = max(1, (int)($_GET['page'] ?? 1));
-$perPage = (int)($_GET['per_page'] ?? 20);
-if (!in_array($perPage, [10, 20, 50, 100])) $perPage = 20;
-
-// CSV export
+// CSV export — must happen before any HTML output
 if (isset($_GET['export']) && $_GET['export'] === 'csv') {
     $csv = exportCsv($conn, $filters);
     header('Content-Type: text/csv');
@@ -33,6 +31,12 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
     echo $csv;
     exit;
 }
+
+require_once __DIR__ . '/../includes/header.php';
+
+$page = max(1, (int)($_GET['page'] ?? 1));
+$perPage = (int)($_GET['per_page'] ?? 20);
+if (!in_array($perPage, [10, 20, 50, 100])) $perPage = 20;
 
 $total = countMeasurements($conn, $filters);
 $totalPages = max(1, (int)ceil($total / $perPage));
@@ -172,8 +176,11 @@ function generateChart() {
     $.get('/api/measurements.php?' + params.toString(), function(res) {
         if (!res.success || !res.data.length) return;
         var labels = res.data.map(r => r.timestamp);
-        var temps = res.data.map(r => r.temperature);
-        var hums = res.data.map(r => r.humidity);
+        var temps = res.data.map(r => r.temperature !== null ? parseFloat(r.temperature) : null);
+        var hums = res.data.map(r => r.humidity !== null ? parseFloat(r.humidity) : null);
+        var press = res.data.map(r => r.airPressure !== null ? parseFloat(r.airPressure) : null);
+        var light = res.data.map(r => r.lightIntensity !== null ? parseFloat(r.lightIntensity) : null);
+        var aq = res.data.map(r => r.airQuality !== null ? parseFloat(r.airQuality) : null);
 
         document.getElementById('chartContainer').classList.remove('d-none');
 
@@ -184,8 +191,11 @@ function generateChart() {
             data: {
                 labels: labels,
                 datasets: [
-                    { label: 'Temperature (°C)', data: temps, borderColor: '#dc3545', backgroundColor: 'rgba(220,53,69,0.1)', tension: 0.3, yAxisID: 'y' },
-                    { label: 'Humidity (%)', data: hums, borderColor: '#0d6efd', backgroundColor: 'rgba(13,110,253,0.1)', tension: 0.3, yAxisID: 'y1' }
+                    { label: '<?= t('temperature') ?>', data: temps, borderColor: '#dc3545', backgroundColor: 'rgba(220,53,69,0.1)', tension: 0.3, yAxisID: 'y', spanGaps: true },
+                    { label: '<?= t('humidity') ?>', data: hums, borderColor: '#0d6efd', backgroundColor: 'rgba(13,110,253,0.1)', tension: 0.3, yAxisID: 'y1', spanGaps: true },
+                    { label: '<?= t('air_pressure') ?>', data: press, borderColor: '#198754', backgroundColor: 'rgba(25,135,84,0.1)', tension: 0.3, yAxisID: 'y', hidden: true, spanGaps: true },
+                    { label: '<?= t('light_intensity') ?>', data: light, borderColor: '#ffc107', backgroundColor: 'rgba(255,193,7,0.1)', tension: 0.3, yAxisID: 'y1', hidden: true, spanGaps: true },
+                    { label: '<?= t('air_quality') ?>', data: aq, borderColor: '#6f42c1', backgroundColor: 'rgba(111,66,193,0.1)', tension: 0.3, yAxisID: 'y1', hidden: true, spanGaps: true }
                 ]
             },
             options: {
@@ -198,12 +208,23 @@ function generateChart() {
                 }
             }
         });
+
+        // Auto-refresh if date_to is in the future or not set
+        var dateTo = '<?= e($filters['date_to']) ?>';
+        var now = new Date().toISOString().slice(0, 10);
+        if (!dateTo || new Date(dateTo) >= new Date(now)) {
+            if (window._chartRefreshTimer) clearInterval(window._chartRefreshTimer);
+            window._chartRefreshTimer = setInterval(function() {
+                if (measurementChart) generateChart();
+            }, 10000);
+        }
     }, 'json');
 }
 
 function closeChart() {
     document.getElementById('chartContainer').classList.add('d-none');
     if (measurementChart) { measurementChart.destroy(); measurementChart = null; }
+    if (window._chartRefreshTimer) { clearInterval(window._chartRefreshTimer); window._chartRefreshTimer = null; }
 }
 
 function downloadChart() {

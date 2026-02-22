@@ -1,8 +1,10 @@
 <?php
-require_once __DIR__ . '/../includes/header.php';
-requireLogin();
+require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/i18n.php';
 require_once __DIR__ . '/../services/chat.php';
 require_once __DIR__ . '/../services/friends.php';
+requireLogin();
 
 $username = $_SESSION['username'];
 $msg = '';
@@ -17,8 +19,6 @@ if (isset($_GET['with'])) {
     }
 }
 
-$activeConvId = isset($_GET['conv']) ? (int)$_GET['conv'] : 0;
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
     if ($action === 'create_group') {
@@ -31,6 +31,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 }
+
+require_once __DIR__ . '/../includes/header.php';
+
+$activeConvId = isset($_GET['conv']) ? (int)$_GET['conv'] : 0;
 
 $conversations = getConversations($conn, $username);
 $activeConv = null;

@@ -1,10 +1,12 @@
 <?php
-require_once __DIR__ . '/../includes/header.php';
-requireLogin();
+require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/i18n.php';
 require_once __DIR__ . '/../services/stations.php';
 require_once __DIR__ . '/../services/measurements.php';
 require_once __DIR__ . '/../services/collections.php';
 require_once __DIR__ . '/../services/friends.php';
+requireLogin();
 
 $username = $_SESSION['username'];
 
@@ -24,6 +26,8 @@ foreach ($myStations as $st) {
     $latest = getLatestMeasurementByStation($conn, $st['pk_serialNumber']);
     $stationData[] = ['station' => $st, 'latest' => $latest];
 }
+
+require_once __DIR__ . '/../includes/header.php';
 ?>
 <h2 class="mb-4"><i class="bi bi-speedometer2 me-2"></i><?= t('dashboard') ?></h2>
 
@@ -88,6 +92,10 @@ foreach ($myStations as $st) {
                     <div class="col-6">
                         <div class="sensor-value text-warning"><?= $sd['latest']['lightIntensity'] !== null ? e($sd['latest']['lightIntensity']) . ' lux' : '-' ?></div>
                         <div class="sensor-label"><?= t('light_intensity') ?></div>
+                    </div>
+                    <div class="col-12">
+                        <div class="sensor-value text-info"><?= $sd['latest']['airQuality'] !== null ? e($sd['latest']['airQuality']) : '-' ?></div>
+                        <div class="sensor-label"><?= t('air_quality') ?></div>
                     </div>
                 </div>
                 <div class="text-center mt-2">

@@ -2,12 +2,13 @@
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/i18n.php';
+require_once __DIR__ . '/../services/notifications.php';
 
 $theme = $_SESSION['theme'] ?? 'light';
 $locale = $_SESSION['locale'] ?? 'en';
 $unreadCount = 0;
 if (isLoggedIn()) {
-    $unreadCount = getUnreadNotificationCount($conn, $_SESSION['username']);
+    $unreadCount = getUnreadCount($conn, $_SESSION['username']);
 }
 $currentPage = basename($_SERVER['PHP_SELF']);
 ?>
@@ -84,7 +85,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                             <strong><?= t('notifications') ?></strong>
                             <a href="#" class="small text-muted" id="markAllReadBtn"><?= t('mark_all_read') ?></a>
                         </div>
-                        <div id="notifList" style="max-height:300px;overflow-y:auto;">
+                        <div id="notifList" data-empty-msg="<?= e(t('no_notifications')) ?>" style="max-height:300px;overflow-y:auto;">
                             <div class="text-center text-muted py-3"><?= t('no_notifications') ?></div>
                         </div>
                     </div>

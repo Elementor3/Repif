@@ -49,27 +49,4 @@ function showError(string $message): string {
         . '<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
 }
 
-function areFriends(mysqli $conn, string $user1, string $user2): bool {
-    $a = min($user1, $user2);
-    $b = max($user1, $user2);
-    $stmt = $conn->prepare("SELECT 1 FROM friendship WHERE pk_user1 = ? AND pk_user2 = ?");
-    $stmt->bind_param("ss", $a, $b);
-    $stmt->execute();
-    return $stmt->get_result()->num_rows > 0;
-}
-
-function getUserStations(mysqli $conn, string $username): array {
-    $stmt = $conn->prepare("SELECT * FROM station WHERE fk_registeredBy = ?");
-    $stmt->bind_param("s", $username);
-    $stmt->execute();
-    return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-}
-
-function getUnreadNotificationCount(mysqli $conn, string $username): int {
-    $stmt = $conn->prepare("SELECT COUNT(*) AS cnt FROM notification WHERE fk_user = ? AND is_read = 0");
-    $stmt->bind_param("s", $username);
-    $stmt->execute();
-    $row = $stmt->get_result()->fetch_assoc();
-    return (int)($row['cnt'] ?? 0);
-}
 ?>

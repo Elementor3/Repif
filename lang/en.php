@@ -140,5 +140,8 @@ return [
     'no_pending_requests' => 'No pending requests',
     'username_taken' => 'Username already taken',
     'email_registered' => 'Email already registered',
+    'station_not_found' => 'Station not found or already registered',
+    'can_only_share_with_friends' => 'You can only share with friends',
+    'view_profile' => 'View Profile',
 ];
 ?>
