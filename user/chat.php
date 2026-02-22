@@ -23,9 +23,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
     if ($action === 'create_group') {
         $name = trim($_POST['group_name'] ?? '');
+        $description = trim($_POST['group_description'] ?? '');
         $members = $_POST['members'] ?? [];
         if ($name && $members) {
-            $convId = createGroupConversation($conn, $name, $username, $members);
+            $convId = createGroupConversation($conn, $name, $description, $username, $members);
             header("Location: /user/chat.php?conv=$convId");
             exit;
         }
@@ -59,8 +60,10 @@ $friends = getFriends($conn, $username);
 <div class="chat-container">
     <!-- Sidebar -->
     <div class="chat-sidebar">
-        <div class="p-2 border-bottom d-flex gap-1">
-            <button class="btn btn-sm btn-primary flex-grow-1" data-bs-toggle="modal" data-bs-target="#newGroupModal">
+        <div class="p-2 border-bottom">
+            <input type="text" id="userSearch" class="form-control form-control-sm mb-2" placeholder="<?= t('search_users') ?>">
+            <div id="searchResults" class="chat-search-results d-none"></div>
+            <button class="btn btn-sm btn-primary w-100" data-bs-toggle="modal" data-bs-target="#newGroupModal">
                 <i class="bi bi-people-fill me-1"></i><?= t('new_group') ?>
             </button>
         </div>
@@ -153,41 +156,47 @@ $friends = getFriends($conn, $username);
                 <h5 class="modal-title"><?= t('new_group') ?></h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <form method="post">
-                <input type="hidden" name="action" value="create_group">
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label class="form-label"><?= t('group_name') ?></label>
-                        <input type="text" name="group_name" class="form-control" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label"><?= t('add_member') ?></label>
-                        <?php foreach ($friends as $f): ?>
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" name="members[]" value="<?= e($f['pk_username']) ?>" id="m_<?= e($f['pk_username']) ?>">
-                            <label class="form-check-label" for="m_<?= e($f['pk_username']) ?>">
-                                <?= e($f['firstName'] . ' ' . $f['lastName']) ?>
-                            </label>
-                        </div>
-                        <?php endforeach; ?>
-                    </div>
+            <div class="modal-body">
+                <div id="groupModalError" class="alert alert-danger d-none"></div>
+                <div class="mb-3">
+                    <label class="form-label"><?= t('group_name') ?></label>
+                    <input type="text" id="groupName" class="form-control" required>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><?= t('cancel') ?></button>
-                    <button type="submit" class="btn btn-primary"><?= t('create') ?></button>
+                <div class="mb-3">
+                    <label class="form-label"><?= t('group_description') ?></label>
+                    <input type="text" id="groupDescription" class="form-control">
                 </div>
-            </form>
+                <div class="mb-3">
+                    <label class="form-label"><?= t('add_member') ?></label>
+                    <?php foreach ($friends as $f): ?>
+                    <div class="form-check">
+                        <input class="form-check-input group-member-check" type="checkbox" value="<?= e($f['pk_username']) ?>" id="m_<?= e($f['pk_username']) ?>">
+                        <label class="form-check-label" for="m_<?= e($f['pk_username']) ?>">
+                            <?= e($f['firstName'] . ' ' . $f['lastName']) ?>
+                        </label>
+                    </div>
+                    <?php endforeach; ?>
+                    <?php if (empty($friends)): ?>
+                    <div class="text-muted small"><?= t('no_friends') ?></div>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><?= t('cancel') ?></button>
+                <button type="button" id="createGroupBtn" class="btn btn-primary"><?= t('create') ?></button>
+            </div>
         </div>
     </div>
 </div>
 
 <?php if ($activeConv): ?>
 <script>
-var lastMsgId = <?= !empty($messages) ? (int)end($messages)['pk_messageID'] : 0 ?>;
-var convId = <?= $activeConvId ?>;
-var currentUser = <?= json_encode($username) ?>;
-
-// Scroll to bottom
+var chatLastMsgId = <?= !empty($messages) ? (int)end($messages)['pk_messageID'] : 0 ?>;
+var chatConvId = <?= $activeConvId ?>;
+var chatCurrentUser = <?= json_encode($username) ?>;
+</script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
 var cm = document.getElementById('chatMessages');
 cm.scrollTop = cm.scrollHeight;
 
@@ -200,7 +209,7 @@ $('#chatForm').on('submit', function(e) {
 
     var formData = new FormData();
     formData.append('action', 'send');
-    formData.append('conversation_id', convId);
+    formData.append('conversation_id', chatConvId);
     formData.append('message', msg);
     if (file) formData.append('file', file);
 
@@ -222,7 +231,7 @@ $('#chatForm').on('submit', function(e) {
 });
 
 function appendMessage(m) {
-    var isOwn = m.fk_sender === currentUser;
+    var isOwn = m.fk_sender === chatCurrentUser;
     var html = '<div class="chat-message ' + (isOwn ? 'own' : 'other') + '">';
     if (!isOwn) html += '<small class="text-muted d-block mb-1">' + $('<div>').text(m.firstName + ' ' + m.lastName).html() + '</small>';
     html += '<div class="bubble">';
@@ -237,17 +246,83 @@ function appendMessage(m) {
 }
 
 function loadNewMessages() {
-    $.get('/api/chat.php', { action: 'get_messages', conversation_id: convId, since_id: lastMsgId }, function(res) {
+    $.get('/api/chat.php', { action: 'get_messages', conversation_id: chatConvId, since_id: chatLastMsgId }, function(res) {
         if (res.success && res.messages.length) {
             res.messages.forEach(function(m) {
                 appendMessage(m);
-                lastMsgId = m.pk_messageID;
+                chatLastMsgId = m.pk_messageID;
             });
         }
     }, 'json');
 }
 
 setInterval(loadNewMessages, 3000);
+});
 </script>
 <?php endif; ?>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+// User search
+var searchTimer;
+$('#userSearch').on('input', function() {
+    clearTimeout(searchTimer);
+    var q = $(this).val().trim();
+    if (q.length < 2) { $('#searchResults').addClass('d-none').html(''); return; }
+    searchTimer = setTimeout(function() {
+        $.get('/api/chat.php', { action: 'search_users', query: q }, function(res) {
+            if (!res.success || !res.users.length) {
+                $('#searchResults').addClass('d-none').html('');
+                return;
+            }
+            var html = '';
+            $.each(res.users, function(i, u) {
+                html += '<div class="chat-search-item" data-username="' + $('<div>').text(u.pk_username).html() + '">' +
+                    '<i class="bi bi-person me-1"></i>' + $('<div>').text(u.firstName + ' ' + u.lastName).html() +
+                    ' <small class="text-muted">@' + $('<div>').text(u.pk_username).html() + '</small></div>';
+            });
+            $('#searchResults').removeClass('d-none').html(html);
+        }, 'json').fail(function() {});
+    }, 300);
+});
+
+$(document).on('click', '.chat-search-item', function() {
+    var otherUser = $(this).data('username');
+    $('#userSearch').val('');
+    $('#searchResults').addClass('d-none').html('');
+    $.post('/api/chat.php', { action: 'create_private_chat', with_user: otherUser }, function(res) {
+        if (res.success) {
+            window.location.href = '/user/chat.php?conv=' + res.conversation_id;
+        } else {
+            alert(res.message || '<?= t('error_occurred') ?>');
+        }
+    }, 'json').fail(function() { alert('<?= t('error_occurred') ?>'); });
+});
+
+// Create group via AJAX
+$('#createGroupBtn').on('click', function() {
+    var name = $('#groupName').val().trim();
+    var description = $('#groupDescription').val().trim();
+    var members = [];
+    $('.group-member-check:checked').each(function() { members.push($(this).val()); });
+    if (!name) { $('#groupModalError').removeClass('d-none').text('<?= t('group_name_required') ?>'); return; }
+    if (members.length < 2) { $('#groupModalError').removeClass('d-none').text('<?= t('select_min_2_members') ?>'); return; }
+    $('#groupModalError').addClass('d-none');
+    $.post('/api/chat.php', { action: 'create_group_chat', group_name: name, group_description: description, 'members[]': members }, function(res) {
+        if (res.success) {
+            window.location.href = '/user/chat.php?conv=' + res.conversation_id;
+        } else {
+            $('#groupModalError').removeClass('d-none').text(res.message || '<?= t('error_occurred') ?>');
+        }
+    }, 'json').fail(function() { $('#groupModalError').removeClass('d-none').text('<?= t('error_occurred') ?>'); });
+});
+
+$('#newGroupModal').on('hidden.bs.modal', function() {
+    $('#groupName').val('');
+    $('#groupDescription').val('');
+    $('.group-member-check').prop('checked', false);
+    $('#groupModalError').addClass('d-none');
+});
+});
+</script>
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>

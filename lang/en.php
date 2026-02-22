@@ -143,5 +143,9 @@ return [
     'station_not_found' => 'Station not found or already registered',
     'can_only_share_with_friends' => 'You can only share with friends',
     'view_profile' => 'View Profile',
+    'search_users' => 'Search users...',
+    'group_description' => 'Group Description',
+    'group_name_required' => 'Group name is required',
+    'select_min_2_members' => 'Please select at least 2 members',
 ];
 ?>

@@ -3,6 +3,9 @@ ALTER TABLE user ADD COLUMN IF NOT EXISTS avatar VARCHAR(255) NULL AFTER role;
 ALTER TABLE user ADD COLUMN IF NOT EXISTS locale VARCHAR(5) NOT NULL DEFAULT 'en' AFTER avatar;
 ALTER TABLE user ADD COLUMN IF NOT EXISTS theme VARCHAR(10) NOT NULL DEFAULT 'light' AFTER locale;
 
+-- Migration: Add description to chat_conversation
+ALTER TABLE chat_conversation ADD COLUMN IF NOT EXISTS description VARCHAR(500) NULL AFTER name;
+
 -- sample table
 CREATE TABLE IF NOT EXISTS sample (
     pk_sampleID INT PRIMARY KEY AUTO_INCREMENT,
@@ -19,6 +22,7 @@ CREATE TABLE IF NOT EXISTS chat_conversation (
     pk_conversationID INT PRIMARY KEY AUTO_INCREMENT,
     type ENUM('private','group') NOT NULL,
     name VARCHAR(100) NULL,
+    description VARCHAR(500) NULL,
     createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     createdBy VARCHAR(50) NULL,
     FOREIGN KEY (createdBy) REFERENCES user(pk_username) ON DELETE SET NULL

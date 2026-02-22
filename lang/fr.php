@@ -143,5 +143,9 @@ return [
     'station_not_found' => 'Station introuvable ou déjà enregistrée',
     'can_only_share_with_friends' => 'Vous ne pouvez partager qu\'avec des amis',
     'view_profile' => 'Voir le profil',
+    'search_users' => 'Rechercher des utilisateurs...',
+    'group_description' => 'Description du groupe',
+    'group_name_required' => 'Le nom du groupe est requis',
+    'select_min_2_members' => 'Veuillez sélectionner au moins 2 membres',
 ];
 ?>

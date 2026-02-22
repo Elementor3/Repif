@@ -61,6 +61,50 @@ if ($action === 'send') {
     $messages = getMessages($conn, $convId, $sinceId);
     echo json_encode(['success' => true, 'messages' => $messages]);
 
+} elseif ($action === 'search_users') {
+    $query = trim($_GET['query'] ?? '');
+    if (strlen($query) < 2) {
+        echo json_encode(['success' => true, 'users' => []]);
+        exit;
+    }
+    $users = searchUsers($conn, $query, $username);
+    echo json_encode(['success' => true, 'users' => $users]);
+
+} elseif ($action === 'create_private_chat') {
+    $withUser = trim($_POST['with_user'] ?? '');
+    if (!$withUser) {
+        echo json_encode(['success' => false, 'message' => 'Missing user']);
+        exit;
+    }
+    $stmt = $conn->prepare("SELECT pk_username FROM user WHERE pk_username=?");
+    $stmt->bind_param("s", $withUser);
+    $stmt->execute();
+    if (!$stmt->get_result()->fetch_assoc()) {
+        echo json_encode(['success' => false, 'message' => 'User not found']);
+        exit;
+    }
+    $convId = getOrCreatePrivateConversation($conn, $username, $withUser);
+    echo json_encode(['success' => true, 'conversation_id' => $convId]);
+
+} elseif ($action === 'create_group_chat') {
+    $name = trim($_POST['group_name'] ?? '');
+    $description = trim($_POST['group_description'] ?? '');
+    $members = $_POST['members'] ?? [];
+    if (!$name) {
+        echo json_encode(['success' => false, 'message' => 'Group name required']);
+        exit;
+    }
+    if (count($members) < 2) {
+        echo json_encode(['success' => false, 'message' => 'Select at least 2 members']);
+        exit;
+    }
+    $convId = createGroupConversation($conn, $name, $description, $username, $members);
+    echo json_encode(['success' => true, 'conversation_id' => $convId]);
+
+} elseif ($action === 'get_chats') {
+    $convs = getConversations($conn, $username);
+    echo json_encode(['success' => true, 'chats' => $convs]);
+
 } else {
     echo json_encode(['success' => false, 'message' => 'Invalid action']);
 }

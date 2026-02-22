@@ -38,10 +38,10 @@ function getOrCreatePrivateConversation(mysqli $conn, string $user1, string $use
     return $convId;
 }
 
-function createGroupConversation(mysqli $conn, string $name, string $createdBy, array $memberUsernames): int {
+function createGroupConversation(mysqli $conn, string $name, string $description, string $createdBy, array $memberUsernames): int {
     $now = date('Y-m-d H:i:s');
-    $stmt = $conn->prepare("INSERT INTO chat_conversation (type, name, createdAt, createdBy) VALUES ('group',?,?,?)");
-    $stmt->bind_param("sss", $name, $now, $createdBy);
+    $stmt = $conn->prepare("INSERT INTO chat_conversation (type, name, description, createdAt, createdBy) VALUES ('group',?,?,?,?)");
+    $stmt->bind_param("ssss", $name, $description, $now, $createdBy);
     $stmt->execute();
     $convId = (int)$conn->insert_id;
     if (!in_array($createdBy, $memberUsernames)) $memberUsernames[] = $createdBy;
@@ -93,5 +93,13 @@ function isParticipant(mysqli $conn, int $conversationId, string $username): boo
     $stmt->bind_param("is", $conversationId, $username);
     $stmt->execute();
     return $stmt->get_result()->num_rows > 0;
+}
+
+function searchUsers(mysqli $conn, string $query, string $excludeUsername): array {
+    $like = '%' . $query . '%';
+    $stmt = $conn->prepare("SELECT pk_username, firstName, lastName FROM user WHERE pk_username != ? AND (pk_username LIKE ? OR firstName LIKE ? OR lastName LIKE ? OR CONCAT(firstName,' ',lastName) LIKE ?) ORDER BY firstName, lastName LIMIT 20");
+    $stmt->bind_param("sssss", $excludeUsername, $like, $like, $like, $like);
+    $stmt->execute();
+    return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 }
 ?>
