@@ -105,6 +105,33 @@ if ($action === 'send') {
     $convs = getConversations($conn, $username);
     echo json_encode(['success' => true, 'chats' => $convs]);
 
+} elseif ($action === 'get_group_info') {
+    $chatId = (int)($_GET['chat_id'] ?? 0);
+    if (!$chatId) {
+        echo json_encode(['success' => false, 'message' => 'Missing chat_id']);
+        exit;
+    }
+    $info = getGroupInfo($conn, $chatId, $username);
+    if (!$info) {
+        echo json_encode(['success' => false, 'message' => 'Not found or not a participant']);
+        exit;
+    }
+    echo json_encode(['success' => true, 'data' => $info]);
+
+} elseif ($action === 'add_group_members') {
+    $chatId = (int)($_POST['chat_id'] ?? 0);
+    $members = $_POST['members'] ?? [];
+    if (!$chatId || empty($members)) {
+        echo json_encode(['success' => false, 'message' => 'Invalid request']);
+        exit;
+    }
+    $result = addGroupMembers($conn, $chatId, $username, (array)$members);
+    if (!$result) {
+        echo json_encode(['success' => false, 'message' => 'Not authorized or not a group chat']);
+        exit;
+    }
+    echo json_encode(['success' => true]);
+
 } else {
     echo json_encode(['success' => false, 'message' => 'Invalid action']);
 }

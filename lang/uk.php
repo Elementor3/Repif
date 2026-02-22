@@ -147,5 +147,17 @@ return [
     'group_description' => 'Опис групи',
     'group_name_required' => 'Назва групи обов\'язкова',
     'select_min_2_members' => 'Будь ласка, виберіть щонайменше 2 учасників',
+    'group_info' => 'Інформація про групу',
+    'members' => 'Учасники',
+    'add_members' => 'Додати учасників',
+    'no_members_yet' => 'Учасників поки що немає',
+    'group_owner' => 'Власник',
+    'add_members_success' => 'Учасників успішно додано',
+    'select_members_to_add' => 'Виберіть учасників для додавання',
+    'no_friends_to_add' => 'Немає доступних друзів для додавання',
+    'search_members' => 'Пошук учасників...',
+    'add' => 'Додати',
+    'today' => 'Сьогодні',
+    'yesterday' => 'Вчора',
 ];
 ?>

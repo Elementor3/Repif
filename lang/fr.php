@@ -147,5 +147,17 @@ return [
     'group_description' => 'Description du groupe',
     'group_name_required' => 'Le nom du groupe est requis',
     'select_min_2_members' => 'Veuillez sélectionner au moins 2 membres',
+    'group_info' => 'Info du groupe',
+    'members' => 'Membres',
+    'add_members' => 'Ajouter des membres',
+    'no_members_yet' => 'Pas encore de membres',
+    'group_owner' => 'Propriétaire',
+    'add_members_success' => 'Membres ajoutés avec succès',
+    'select_members_to_add' => 'Sélectionnez des membres à ajouter',
+    'no_friends_to_add' => 'Aucun ami disponible à ajouter',
+    'search_members' => 'Rechercher des membres...',
+    'add' => 'Ajouter',
+    'today' => 'Aujourd\'hui',
+    'yesterday' => 'Hier',
 ];
 ?>
