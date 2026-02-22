@@ -198,17 +198,21 @@ $friends = getFriends($conn, $username);
                 </div>
                 <div class="mb-3">
                     <label class="form-label"><?= t('add_member') ?></label>
+                    <input type="text" id="newGroupMemberSearch" class="form-control form-control-sm mb-2" placeholder="<?= t('search_members') ?>">
+                    <div id="newGroupMemberList" class="group-member-list mb-1">
                     <?php foreach ($friends as $f): ?>
-                    <div class="form-check">
+                    <div class="group-member-item form-check">
                         <input class="form-check-input group-member-check" type="checkbox" value="<?= e($f['pk_username']) ?>" id="m_<?= e($f['pk_username']) ?>">
                         <label class="form-check-label" for="m_<?= e($f['pk_username']) ?>">
                             <?= e($f['firstName'] . ' ' . $f['lastName']) ?>
+                            <small class="text-muted d-block">@<?= e($f['pk_username']) ?></small>
                         </label>
                     </div>
                     <?php endforeach; ?>
                     <?php if (empty($friends)): ?>
-                    <div class="text-muted small"><?= t('no_friends') ?></div>
+                    <div class="text-muted small px-3 py-1"><?= t('no_friends') ?></div>
                     <?php endif; ?>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
@@ -230,7 +234,13 @@ $friends = getFriends($conn, $username);
             <div class="modal-body">
                 <div id="groupInfoError" class="alert alert-danger d-none"></div>
                 <div id="groupInfoSuccess" class="alert alert-success d-none"></div>
-                <p id="groupInfoDescription" class="text-muted small mb-3"></p>
+                <div id="groupInfoDescriptionWrapper">
+                    <p id="groupInfoDescription" class="text-muted small mb-3"></p>
+                    <div id="groupInfoDescriptionEdit" class="d-none mb-3">
+                        <textarea id="groupInfoDescriptionInput" class="form-control form-control-sm mb-1" rows="2"></textarea>
+                        <button type="button" id="groupInfoSaveBtn" class="btn btn-sm btn-primary"><?= t('save_description') ?></button>
+                    </div>
+                </div>
                 <h6><?= t('members') ?></h6>
                 <ul id="groupInfoMembers" class="list-unstyled mb-3"></ul>
                 <hr id="groupInfoAddDivider" class="d-none">
@@ -308,10 +318,6 @@ $('#chatForm').on('submit', function(e) {
     });
 });
 
-function esc(str) {
-    return $('<div>').text(str).html();
-}
-
 function timeFromDateStr(dateStr) {
     if (!dateStr) return '';
     // dateStr: "Y-m-d H:i:s" or "Y-m-d H:i"
@@ -365,19 +371,32 @@ if (chatIsGroup) {
             }
             var d = res.data;
             $('#groupInfoModalTitle').text(d.name || '<?= t('group_info') ?>');
-            $('#groupInfoDescription').text(d.description || '');
+            var isOwner = d.createdBy === chatCurrentUser;
+            // Description: editable for owner, static for others
+            if (isOwner) {
+                $('#groupInfoDescription').addClass('d-none');
+                $('#groupInfoDescriptionEdit').removeClass('d-none');
+                $('#groupInfoDescriptionInput').val(d.description || '');
+            } else {
+                $('#groupInfoDescription').removeClass('d-none').text(d.description || '');
+                $('#groupInfoDescriptionEdit').addClass('d-none');
+            }
             // Members list
             var ul = $('#groupInfoMembers');
             if (d.members && d.members.length) {
                 $.each(d.members, function(i, m) {
                     var badge = m.role === 'owner' ? ' <span class="badge bg-secondary ms-1"><?= t('group_owner') ?></span>' : '';
-                    ul.append('<li class="py-1"><i class="bi bi-person me-1"></i>' + esc(m.firstName + ' ' + m.lastName + ' (@' + m.pk_username + ')') + badge + '</li>');
+                    var removeBtn = '';
+                    if (isOwner && m.role !== 'owner') {
+                        removeBtn = ' <button type="button" class="btn btn-sm btn-outline-danger group-remove-member ms-1 py-0 px-1" data-username="' + esc(m.pk_username) + '" title="<?= t('remove_member') ?>">&times;</button>';
+                    }
+                    ul.append('<li class="py-1 d-flex align-items-center"><span><i class="bi bi-person me-1"></i>' + esc(m.firstName + ' ' + m.lastName + ' (@' + m.pk_username + ')') + badge + '</span>' + removeBtn + '</li>');
                 });
             } else {
                 ul.append('<li class="text-muted small"><?= t('no_members_yet') ?></li>');
             }
             // Add members section (only if current user is owner)
-            if (d.createdBy === chatCurrentUser) {
+            if (isOwner) {
                 $('#groupInfoAddDivider').removeClass('d-none');
                 $('#groupInfoAddSection').removeClass('d-none');
                 var addList = $('#groupInfoAddList');
@@ -436,6 +455,41 @@ if (chatIsGroup) {
             $('#groupInfoError').removeClass('d-none').text('<?= t('error_occurred') ?>');
         });
     });
+
+    // Save group description
+    $('#groupInfoSaveBtn').on('click', function() {
+        var desc = $('#groupInfoDescriptionInput').val();
+        $.post('/api/chat.php', { action: 'update_group', chat_id: chatConvId, description: desc }, function(res) {
+            if (res.success) {
+                $('#groupInfoSuccess').removeClass('d-none').text('<?= t('success') ?>');
+                $('#groupInfoError').addClass('d-none');
+            } else {
+                $('#groupInfoError').removeClass('d-none').text(res.message || '<?= t('error_occurred') ?>');
+                $('#groupInfoSuccess').addClass('d-none');
+            }
+        }, 'json').fail(function() {
+            $('#groupInfoError').removeClass('d-none').text('<?= t('error_occurred') ?>');
+        });
+    });
+
+    // Remove group member
+    $(document).on('click', '.group-remove-member', function() {
+        var username = $(this).data('username');
+        if (!confirm('<?= t('confirm_remove_member') ?>')) return;
+        var li = $(this).closest('li');
+        $.post('/api/chat.php', { action: 'remove_group_member', chat_id: chatConvId, member_username: username }, function(res) {
+            if (res.success) {
+                li.remove();
+                $('#groupInfoSuccess').removeClass('d-none').text('<?= t('member_removed') ?>');
+                $('#groupInfoError').addClass('d-none');
+            } else {
+                $('#groupInfoError').removeClass('d-none').text(res.message || '<?= t('error_occurred') ?>');
+                $('#groupInfoSuccess').addClass('d-none');
+            }
+        }, 'json').fail(function() {
+            $('#groupInfoError').removeClass('d-none').text('<?= t('error_occurred') ?>');
+        });
+    });
 }
 
 });
@@ -443,6 +497,9 @@ if (chatIsGroup) {
 <?php endif; ?>
 
 <script>
+function esc(str) {
+    return $('<div>').text(str).html();
+}
 document.addEventListener('DOMContentLoaded', function() {
 // User search
 var searchTimer;
@@ -480,6 +537,15 @@ $(document).on('click', '.chat-search-item', function() {
     }, 'json').fail(function() { alert('<?= t('error_occurred') ?>'); });
 });
 
+// New Group member search filter
+$('#newGroupMemberSearch').on('input', function() {
+    var q = $(this).val().toLowerCase();
+    $('#newGroupMemberList .group-member-item').each(function() {
+        var label = $(this).find('label').text().toLowerCase();
+        $(this).toggle(label.indexOf(q) !== -1);
+    });
+});
+
 // Create group via AJAX
 $('#createGroupBtn').on('click', function() {
     var name = $('#groupName').val().trim();
@@ -502,6 +568,8 @@ $('#newGroupModal').on('hidden.bs.modal', function() {
     $('#groupName').val('');
     $('#groupDescription').val('');
     $('.group-member-check').prop('checked', false);
+    $('#newGroupMemberSearch').val('');
+    $('#newGroupMemberList .group-member-item').show();
     $('#groupModalError').addClass('d-none');
 });
 });

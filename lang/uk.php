@@ -159,5 +159,9 @@ return [
     'add' => 'Додати',
     'today' => 'Сьогодні',
     'yesterday' => 'Вчора',
+    'remove_member' => 'Видалити учасника',
+    'confirm_remove_member' => 'Ви впевнені, що хочете видалити цього учасника?',
+    'save_description' => 'Зберегти опис',
+    'member_removed' => 'Учасника успішно видалено',
 ];
 ?>

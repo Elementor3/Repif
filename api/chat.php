@@ -132,6 +132,35 @@ if ($action === 'send') {
     }
     echo json_encode(['success' => true]);
 
+} elseif ($action === 'update_group') {
+    $chatId = (int)($_POST['chat_id'] ?? 0);
+    $name = isset($_POST['name']) ? trim($_POST['name']) : null;
+    $description = isset($_POST['description']) ? trim($_POST['description']) : null;
+    if (!$chatId) {
+        echo json_encode(['success' => false, 'message' => 'Missing chat_id']);
+        exit;
+    }
+    $result = updateGroupConversation($conn, $chatId, $username, $name, $description);
+    if ($result === null) {
+        echo json_encode(['success' => false, 'message' => 'Not authorized or not a group chat']);
+        exit;
+    }
+    echo json_encode(['success' => true, 'data' => $result]);
+
+} elseif ($action === 'remove_group_member') {
+    $chatId = (int)($_POST['chat_id'] ?? 0);
+    $memberUsername = trim($_POST['member_username'] ?? '');
+    if (!$chatId || !$memberUsername) {
+        echo json_encode(['success' => false, 'message' => 'Invalid request']);
+        exit;
+    }
+    $result = removeGroupMember($conn, $chatId, $username, $memberUsername);
+    if (!$result) {
+        echo json_encode(['success' => false, 'message' => 'Not authorized or cannot remove this member']);
+        exit;
+    }
+    echo json_encode(['success' => true]);
+
 } else {
     echo json_encode(['success' => false, 'message' => 'Invalid action']);
 }
