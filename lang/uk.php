@@ -143,5 +143,9 @@ return [
     'station_not_found' => 'Станцію не знайдено або вже зареєстровано',
     'can_only_share_with_friends' => 'Можна поділитися лише з друзями',
     'view_profile' => 'Переглянути профіль',
+    'search_users' => 'Пошук користувачів...',
+    'group_description' => 'Опис групи',
+    'group_name_required' => 'Назва групи обов\'язкова',
+    'select_min_2_members' => 'Будь ласка, виберіть щонайменше 2 учасників',
 ];
 ?>
