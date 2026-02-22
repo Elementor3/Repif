@@ -308,25 +308,29 @@ $('#chatForm').on('submit', function(e) {
     });
 });
 
+function esc(str) {
+    return $('<div>').text(str).html();
+}
+
 function timeFromDateStr(dateStr) {
     if (!dateStr) return '';
     // dateStr: "Y-m-d H:i:s" or "Y-m-d H:i"
     var parts = dateStr.split(' ');
     if (parts.length >= 2) return parts[1].substring(0, 5);
-    return dateStr.substring(0, 5);
+    return '';
 }
 
 function appendMessage(m) {
     var isOwn = m.fk_sender === chatCurrentUser;
     var html = '<div class="chat-message ' + (isOwn ? 'own' : 'other') + '">';
-    if (!isOwn) html += '<small class="text-muted d-block mb-1">' + $('<div>').text(m.firstName + ' ' + m.lastName).html() + '</small>';
+    if (!isOwn) html += '<small class="text-muted d-block mb-1">' + esc(m.firstName + ' ' + m.lastName) + '</small>';
     html += '<div class="bubble">';
     if (m.file_name) {
-        html += '<a href="/uploads/chat/' + encodeURIComponent(m.file_path.replace(/.*[\\/]/, '')) + '" target="_blank" class="text-white d-block"><i class="bi bi-file-earmark me-1"></i>' + $('<div>').text(m.file_name).html() + '</a>';
+        html += '<a href="/uploads/chat/' + encodeURIComponent(m.file_path.replace(/.*[\\/]/, '')) + '" target="_blank" class="text-white d-block"><i class="bi bi-file-earmark me-1"></i>' + esc(m.file_name) + '</a>';
     } else {
-        html += $('<div>').text(m.message || '').html();
+        html += esc(m.message || '');
     }
-    html += '</div><small class="text-muted">' + $('<div>').text(timeFromDateStr(m.createdAt)).html() + '</small></div>';
+    html += '</div><small class="text-muted">' + esc(timeFromDateStr(m.createdAt)) + '</small></div>';
     $('#chatMessages').append(html);
     cm.scrollTop = cm.scrollHeight;
 }
@@ -367,7 +371,7 @@ if (chatIsGroup) {
             if (d.members && d.members.length) {
                 $.each(d.members, function(i, m) {
                     var badge = m.role === 'owner' ? ' <span class="badge bg-secondary ms-1"><?= t('group_owner') ?></span>' : '';
-                    ul.append('<li class="py-1"><i class="bi bi-person me-1"></i>' + $('<div>').text(m.firstName + ' ' + m.lastName + ' (@' + m.pk_username + ')').html() + badge + '</li>');
+                    ul.append('<li class="py-1"><i class="bi bi-person me-1"></i>' + esc(m.firstName + ' ' + m.lastName + ' (@' + m.pk_username + ')') + badge + '</li>');
                 });
             } else {
                 ul.append('<li class="text-muted small"><?= t('no_members_yet') ?></li>');
@@ -383,8 +387,8 @@ if (chatIsGroup) {
                         var id = 'gaf_' + f.pk_username;
                         addList.append(
                             '<div class="form-check px-3 py-1 group-add-friend-item">' +
-                            '<input class="form-check-input group-add-check" type="checkbox" value="' + $('<div>').text(f.pk_username).html() + '" id="' + $('<div>').text(id).html() + '">' +
-                            '<label class="form-check-label" for="' + $('<div>').text(id).html() + '">' + $('<div>').text(f.firstName + ' ' + f.lastName).html() + '</label>' +
+                            '<input class="form-check-input group-add-check" type="checkbox" value="' + esc(f.pk_username) + '" id="' + esc(id) + '">' +
+                            '<label class="form-check-label" for="' + esc(id) + '">' + esc(f.firstName + ' ' + f.lastName) + '</label>' +
                             '</div>'
                         );
                     });
@@ -454,9 +458,9 @@ $('#userSearch').on('input', function() {
             }
             var html = '';
             $.each(res.users, function(i, u) {
-                html += '<div class="chat-search-item" data-username="' + $('<div>').text(u.pk_username).html() + '">' +
-                    '<i class="bi bi-person me-1"></i>' + $('<div>').text(u.firstName + ' ' + u.lastName).html() +
-                    ' <small class="text-muted">@' + $('<div>').text(u.pk_username).html() + '</small></div>';
+                html += '<div class="chat-search-item" data-username="' + esc(u.pk_username) + '">' +
+                    '<i class="bi bi-person me-1"></i>' + esc(u.firstName + ' ' + u.lastName) +
+                    ' <small class="text-muted">@' + esc(u.pk_username) + '</small></div>';
             });
             $('#searchResults').removeClass('d-none').html(html);
         }, 'json').fail(function() {});
