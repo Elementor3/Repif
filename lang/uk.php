@@ -143,5 +143,14 @@ return [
     'station_not_found' => 'Станцію не знайдено або вже зареєстровано',
     'can_only_share_with_friends' => 'Можна поділитися лише з друзями',
     'view_profile' => 'Переглянути профіль',
+    'group_info' => 'Інформація про групу',
+    'members' => 'Учасники',
+    'add_members' => 'Додати учасників',
+    'no_members_yet' => 'Ще немає учасників',
+    'group_owner' => 'Власник',
+    'group_members' => 'Учасники',
+    'group_description' => 'Опис',
+    'search_members' => 'Пошук друзів...',
+    'not_owner' => 'Лише власник групи може керувати учасниками',
 ];
 ?>

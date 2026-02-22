@@ -19,20 +19,26 @@ CREATE TABLE IF NOT EXISTS chat_conversation (
     pk_conversationID INT PRIMARY KEY AUTO_INCREMENT,
     type ENUM('private','group') NOT NULL,
     name VARCHAR(100) NULL,
+    description TEXT NULL,
     createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     createdBy VARCHAR(50) NULL,
     FOREIGN KEY (createdBy) REFERENCES user(pk_username) ON DELETE SET NULL
 );
+-- For existing installations: add the description column if it does not exist yet
+ALTER TABLE chat_conversation ADD COLUMN IF NOT EXISTS description TEXT NULL AFTER name;
 
 -- chat_participant table
 CREATE TABLE IF NOT EXISTS chat_participant (
     fk_conversation INT NOT NULL,
     fk_user VARCHAR(50) NOT NULL,
+    role ENUM('owner','member') NOT NULL DEFAULT 'member',
     joinedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (fk_conversation, fk_user),
     FOREIGN KEY (fk_conversation) REFERENCES chat_conversation(pk_conversationID) ON DELETE CASCADE,
     FOREIGN KEY (fk_user) REFERENCES user(pk_username) ON DELETE CASCADE
 );
+-- For existing installations: add the role column if it does not exist yet
+ALTER TABLE chat_participant ADD COLUMN IF NOT EXISTS role ENUM('owner','member') NOT NULL DEFAULT 'member' AFTER fk_user;
 
 -- chat_message table
 CREATE TABLE IF NOT EXISTS chat_message (

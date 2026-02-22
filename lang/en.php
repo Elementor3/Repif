@@ -143,5 +143,14 @@ return [
     'station_not_found' => 'Station not found or already registered',
     'can_only_share_with_friends' => 'You can only share with friends',
     'view_profile' => 'View Profile',
+    'group_info' => 'Group Info',
+    'members' => 'Members',
+    'add_members' => 'Add Members',
+    'no_members_yet' => 'No members yet',
+    'group_owner' => 'Owner',
+    'group_members' => 'Members',
+    'group_description' => 'Description',
+    'search_members' => 'Search friends...',
+    'not_owner' => 'Only the group owner can manage members',
 ];
 ?>

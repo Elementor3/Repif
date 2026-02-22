@@ -61,6 +61,29 @@ if ($action === 'send') {
     $messages = getMessages($conn, $convId, $sinceId);
     echo json_encode(['success' => true, 'messages' => $messages]);
 
+} elseif ($action === 'get_group_info') {
+    $chatId = (int)($_GET['chat_id'] ?? 0);
+    try {
+        $data = getGroupInfo($conn, $chatId, $username);
+        echo json_encode(['success' => true, 'data' => $data]);
+    } catch (RuntimeException $e) {
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
+
+} elseif ($action === 'add_group_members') {
+    $chatId = (int)($_POST['chat_id'] ?? 0);
+    $members = $_POST['members'] ?? [];
+    if (!is_array($members) || empty($members)) {
+        echo json_encode(['success' => false, 'error' => 'no_members']);
+        exit;
+    }
+    try {
+        addGroupMembers($conn, $chatId, $members, $username);
+        echo json_encode(['success' => true]);
+    } catch (RuntimeException $e) {
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
+
 } else {
     echo json_encode(['success' => false, 'message' => 'Invalid action']);
 }

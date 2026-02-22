@@ -38,16 +38,18 @@ function getOrCreatePrivateConversation(mysqli $conn, string $user1, string $use
     return $convId;
 }
 
-function createGroupConversation(mysqli $conn, string $name, string $createdBy, array $memberUsernames): int {
+function createGroupConversation(mysqli $conn, string $name, string $createdBy, array $memberUsernames, string $description = ''): int {
     $now = date('Y-m-d H:i:s');
-    $stmt = $conn->prepare("INSERT INTO chat_conversation (type, name, createdAt, createdBy) VALUES ('group',?,?,?)");
-    $stmt->bind_param("sss", $name, $now, $createdBy);
+    $desc = $description ?: null;
+    $stmt = $conn->prepare("INSERT INTO chat_conversation (type, name, description, createdAt, createdBy) VALUES ('group',?,?,?,?)");
+    $stmt->bind_param("ssss", $name, $desc, $now, $createdBy);
     $stmt->execute();
     $convId = (int)$conn->insert_id;
     if (!in_array($createdBy, $memberUsernames)) $memberUsernames[] = $createdBy;
     foreach ($memberUsernames as $member) {
-        $stmt = $conn->prepare("INSERT IGNORE INTO chat_participant (fk_conversation, fk_user, joinedAt) VALUES (?,?,?)");
-        $stmt->bind_param("iss", $convId, $member, $now);
+        $role = ($member === $createdBy) ? 'owner' : 'member';
+        $stmt = $conn->prepare("INSERT IGNORE INTO chat_participant (fk_conversation, fk_user, role, joinedAt) VALUES (?,?,?,?)");
+        $stmt->bind_param("isss", $convId, $member, $role, $now);
         $stmt->execute();
     }
     return $convId;
@@ -93,5 +95,50 @@ function isParticipant(mysqli $conn, int $conversationId, string $username): boo
     $stmt->bind_param("is", $conversationId, $username);
     $stmt->execute();
     return $stmt->get_result()->num_rows > 0;
+}
+
+function getGroupInfo(mysqli $conn, int $chatId, string $currentUser): array {
+    if (!isParticipant($conn, $chatId, $currentUser)) {
+        throw new RuntimeException('not_participant');
+    }
+    $stmt = $conn->prepare("SELECT pk_conversationID, type, name, description, createdBy FROM chat_conversation WHERE pk_conversationID = ? AND type = 'group'");
+    $stmt->bind_param("i", $chatId);
+    $stmt->execute();
+    $conv = $stmt->get_result()->fetch_assoc();
+    if (!$conv) throw new RuntimeException('not_found');
+
+    $stmt2 = $conn->prepare("SELECT u.pk_username, u.firstName, u.lastName, cp.role FROM chat_participant cp JOIN user u ON cp.fk_user = u.pk_username WHERE cp.fk_conversation = ? ORDER BY cp.role ASC, u.firstName ASC");
+    $stmt2->bind_param("i", $chatId);
+    $stmt2->execute();
+    $members = $stmt2->get_result()->fetch_all(MYSQLI_ASSOC);
+
+    return [
+        'id'          => (int)$conv['pk_conversationID'],
+        'name'        => $conv['name'],
+        'description' => $conv['description'] ?? '',
+        'members'     => array_map(fn($m) => [
+            'username'  => $m['pk_username'],
+            'full_name' => $m['firstName'] . ' ' . $m['lastName'],
+            'role'      => $m['role'] ?? 'member',
+        ], $members),
+    ];
+}
+
+function addGroupMembers(mysqli $conn, int $chatId, array $usernames, string $currentUser): bool {
+    // Verify the chat is a group and current user is owner
+    $stmt = $conn->prepare("SELECT cp.role FROM chat_participant cp JOIN chat_conversation cc ON cc.pk_conversationID = cp.fk_conversation WHERE cp.fk_conversation = ? AND cp.fk_user = ? AND cc.type = 'group'");
+    $stmt->bind_param("is", $chatId, $currentUser);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    if (!$row || $row['role'] !== 'owner') throw new RuntimeException('not_owner');
+
+    $now = date('Y-m-d H:i:s');
+    $role = 'member';
+    foreach ($usernames as $username) {
+        $stmt2 = $conn->prepare("INSERT IGNORE INTO chat_participant (fk_conversation, fk_user, role, joinedAt) VALUES (?,?,?,?)");
+        $stmt2->bind_param("isss", $chatId, $username, $role, $now);
+        $stmt2->execute();
+    }
+    return true;
 }
 ?>
