@@ -147,5 +147,17 @@ return [
     'group_description' => 'Group Description',
     'group_name_required' => 'Group name is required',
     'select_min_2_members' => 'Please select at least 2 members',
+    'group_info' => 'Group Info',
+    'members' => 'Members',
+    'add_members' => 'Add Members',
+    'no_members_yet' => 'No members yet',
+    'group_owner' => 'Owner',
+    'add_members_success' => 'Members added successfully',
+    'select_members_to_add' => 'Select members to add',
+    'no_friends_to_add' => 'No friends available to add',
+    'search_members' => 'Search members...',
+    'add' => 'Add',
+    'today' => 'Today',
+    'yesterday' => 'Yesterday',
 ];
 ?>

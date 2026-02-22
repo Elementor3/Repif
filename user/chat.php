@@ -73,19 +73,28 @@ $friends = getFriends($conn, $username);
                 <div class="px-2">
                     <?php foreach ($friends as $f): ?>
                     <a href="/user/chat.php?with=<?= urlencode($f['pk_username']) ?>" class="d-block text-decoration-none chat-conv-item">
-                        <div class="conv-name"><?= e($f['firstName'] . ' ' . $f['lastName']) ?></div>
-                        <div class="conv-preview"><?= t('new_chat') ?></div>
+                        <span class="conv-avatar"><i class="bi bi-person-circle"></i></span>
+                        <div class="conv-info">
+                            <div class="conv-name"><?= e($f['firstName'] . ' ' . $f['lastName']) ?></div>
+                            <div class="conv-preview"><?= t('new_chat') ?></div>
+                        </div>
                     </a>
                     <?php endforeach; ?>
                 </div>
             <?php else: ?>
                 <?php foreach ($conversations as $c): ?>
                 <a href="/user/chat.php?conv=<?= $c['pk_conversationID'] ?>" class="text-decoration-none chat-conv-item <?= $activeConvId == $c['pk_conversationID'] ? 'active' : '' ?>">
-                    <div class="conv-name">
-                        <?php if ($c['type'] === 'group'): ?><i class="bi bi-people-fill me-1 text-primary"></i><?php endif; ?>
-                        <?= e($c['display_name'] ?? $c['name'] ?? 'Chat') ?>
+                    <span class="conv-avatar">
+                        <?php if ($c['type'] === 'group'): ?>
+                        <i class="bi bi-people-fill"></i>
+                        <?php else: ?>
+                        <i class="bi bi-person-circle"></i>
+                        <?php endif; ?>
+                    </span>
+                    <div class="conv-info">
+                        <div class="conv-name"><?= e($c['display_name'] ?? $c['name'] ?? 'Chat') ?></div>
+                        <div class="conv-preview"><?= e($c['last_message'] ?? '') ?></div>
                     </div>
-                    <div class="conv-preview"><?= e($c['last_message'] ?? '') ?></div>
                 </a>
                 <?php endforeach; ?>
             <?php endif; ?>
@@ -96,17 +105,37 @@ $friends = getFriends($conn, $username);
     <div class="chat-main">
         <?php if ($activeConv): ?>
         <div class="p-3 border-bottom d-flex justify-content-between align-items-center">
-            <strong><?= e($activeConv['display_name'] ?? $activeConv['name'] ?? 'Chat') ?></strong>
             <?php if ($activeConv['type'] === 'group'): ?>
+            <strong id="groupTitleLink" style="cursor:pointer;" data-conv-id="<?= $activeConvId ?>">
+                <?= e($activeConv['display_name'] ?? $activeConv['name'] ?? 'Chat') ?>
+            </strong>
             <span class="badge bg-secondary"><?= t('group_chat') ?></span>
+            <?php else: ?>
+            <strong><?= e($activeConv['display_name'] ?? $activeConv['name'] ?? 'Chat') ?></strong>
             <?php endif; ?>
         </div>
         <div class="chat-messages" id="chatMessages">
             <?php
             $messages = getMessages($conn, $activeConvId, 0);
+            $lastDate = null;
             foreach ($messages as $m):
                 $isOwn = $m['fk_sender'] === $username;
+                $msgDate = date('Y-m-d', strtotime($m['createdAt']));
+                $msgTime = date('H:i', strtotime($m['createdAt']));
+                if ($msgDate !== $lastDate):
+                    $lastDate = $msgDate;
+                    $today = date('Y-m-d');
+                    $yesterday = date('Y-m-d', strtotime('-1 day'));
+                    if ($msgDate === $today) {
+                        $dateLabel = t('today');
+                    } elseif ($msgDate === $yesterday) {
+                        $dateLabel = t('yesterday');
+                    } else {
+                        $dateLabel = date('d M Y', strtotime($msgDate));
+                    }
             ?>
+            <div class="chat-date-separator"><span><?= e($dateLabel) ?></span></div>
+            <?php endif; ?>
             <div class="chat-message <?= $isOwn ? 'own' : 'other' ?>">
                 <?php if (!$isOwn): ?>
                 <small class="text-muted d-block mb-1"><?= e($m['firstName'] . ' ' . $m['lastName']) ?></small>
@@ -120,11 +149,12 @@ $friends = getFriends($conn, $username);
                     <?= e($m['message'] ?? '') ?>
                     <?php endif; ?>
                 </div>
-                <small class="text-muted"><?= formatDateTime($m['createdAt']) ?></small>
+                <small class="text-muted"><?= e($msgTime) ?></small>
             </div>
             <?php endforeach; ?>
         </div>
         <div class="chat-input-area">
+            <div id="attachmentPreview" class="attachment-preview"></div>
             <form id="chatForm" enctype="multipart/form-data">
                 <input type="hidden" id="convId" value="<?= $activeConvId ?>">
                 <div class="d-flex gap-2">
@@ -189,16 +219,63 @@ $friends = getFriends($conn, $username);
     </div>
 </div>
 
+<!-- Group Info Modal -->
+<div class="modal fade" id="groupInfoModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="groupInfoModalTitle"><?= t('group_info') ?></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="groupInfoError" class="alert alert-danger d-none"></div>
+                <div id="groupInfoSuccess" class="alert alert-success d-none"></div>
+                <p id="groupInfoDescription" class="text-muted small mb-3"></p>
+                <h6><?= t('members') ?></h6>
+                <ul id="groupInfoMembers" class="list-unstyled mb-3"></ul>
+                <hr id="groupInfoAddDivider" class="d-none">
+                <div id="groupInfoAddSection" class="d-none">
+                    <h6><?= t('add_members') ?></h6>
+                    <input type="text" id="groupInfoMemberSearch" class="form-control form-control-sm mb-2" placeholder="<?= t('search_members') ?>">
+                    <div id="groupInfoAddList" class="group-add-members-list mb-2"></div>
+                    <button type="button" id="groupInfoAddBtn" class="btn btn-sm btn-primary"><?= t('add') ?></button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <?php if ($activeConv): ?>
 <script>
 var chatLastMsgId = <?= !empty($messages) ? (int)end($messages)['pk_messageID'] : 0 ?>;
 var chatConvId = <?= $activeConvId ?>;
 var chatCurrentUser = <?= json_encode($username) ?>;
+var chatIsGroup = <?= $activeConv['type'] === 'group' ? 'true' : 'false' ?>;
 </script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
 var cm = document.getElementById('chatMessages');
 cm.scrollTop = cm.scrollHeight;
+
+// Attachment preview
+$('#chatFile').on('change', function() {
+    var preview = $('#attachmentPreview');
+    preview.empty();
+    var files = this.files;
+    if (files.length) {
+        $.each(files, function(i, f) {
+            var pill = $('<span class="attachment-pill"></span>');
+            pill.append($('<span></span>').text(f.name));
+            var closeBtn = $('<button type="button" class="attachment-pill-close ms-1" aria-label="Remove">&times;</button>');
+            closeBtn.on('click', function() {
+                $('#chatFile').val('');
+                preview.empty();
+            });
+            pill.append(closeBtn);
+            preview.append(pill);
+        });
+    }
+});
 
 // Send message
 $('#chatForm').on('submit', function(e) {
@@ -223,12 +300,21 @@ $('#chatForm').on('submit', function(e) {
             if (res.success) {
                 $('#chatMsg').val('');
                 $('#chatFile').val('');
+                $('#attachmentPreview').empty();
                 loadNewMessages();
             }
         },
         dataType: 'json'
     });
 });
+
+function timeFromDateStr(dateStr) {
+    if (!dateStr) return '';
+    // dateStr: "Y-m-d H:i:s" or "Y-m-d H:i"
+    var parts = dateStr.split(' ');
+    if (parts.length >= 2) return parts[1].substring(0, 5);
+    return dateStr.substring(0, 5);
+}
 
 function appendMessage(m) {
     var isOwn = m.fk_sender === chatCurrentUser;
@@ -240,7 +326,7 @@ function appendMessage(m) {
     } else {
         html += $('<div>').text(m.message || '').html();
     }
-    html += '</div><small class="text-muted">' + m.createdAt + '</small></div>';
+    html += '</div><small class="text-muted">' + $('<div>').text(timeFromDateStr(m.createdAt)).html() + '</small></div>';
     $('#chatMessages').append(html);
     cm.scrollTop = cm.scrollHeight;
 }
@@ -257,6 +343,97 @@ function loadNewMessages() {
 }
 
 setInterval(loadNewMessages, 3000);
+
+// Group info modal
+if (chatIsGroup) {
+    $('#groupTitleLink').on('click', function() {
+        var convId = $(this).data('conv-id');
+        $('#groupInfoError').addClass('d-none');
+        $('#groupInfoSuccess').addClass('d-none');
+        $('#groupInfoMembers').empty();
+        $('#groupInfoAddList').empty();
+        $('#groupInfoMemberSearch').val('');
+        $.get('/api/chat.php', { action: 'get_group_info', chat_id: convId }, function(res) {
+            if (!res.success) {
+                $('#groupInfoError').removeClass('d-none').text(res.message || '<?= t('error_occurred') ?>');
+                $('#groupInfoModal').modal('show');
+                return;
+            }
+            var d = res.data;
+            $('#groupInfoModalTitle').text(d.name || '<?= t('group_info') ?>');
+            $('#groupInfoDescription').text(d.description || '');
+            // Members list
+            var ul = $('#groupInfoMembers');
+            if (d.members && d.members.length) {
+                $.each(d.members, function(i, m) {
+                    var badge = m.role === 'owner' ? ' <span class="badge bg-secondary ms-1"><?= t('group_owner') ?></span>' : '';
+                    ul.append('<li class="py-1"><i class="bi bi-person me-1"></i>' + $('<div>').text(m.firstName + ' ' + m.lastName + ' (@' + m.pk_username + ')').html() + badge + '</li>');
+                });
+            } else {
+                ul.append('<li class="text-muted small"><?= t('no_members_yet') ?></li>');
+            }
+            // Add members section (only if current user is owner)
+            if (d.createdBy === chatCurrentUser) {
+                $('#groupInfoAddDivider').removeClass('d-none');
+                $('#groupInfoAddSection').removeClass('d-none');
+                var addList = $('#groupInfoAddList');
+                addList.empty();
+                if (d.addable_friends && d.addable_friends.length) {
+                    $.each(d.addable_friends, function(i, f) {
+                        var id = 'gaf_' + f.pk_username;
+                        addList.append(
+                            '<div class="form-check px-3 py-1 group-add-friend-item">' +
+                            '<input class="form-check-input group-add-check" type="checkbox" value="' + $('<div>').text(f.pk_username).html() + '" id="' + $('<div>').text(id).html() + '">' +
+                            '<label class="form-check-label" for="' + $('<div>').text(id).html() + '">' + $('<div>').text(f.firstName + ' ' + f.lastName).html() + '</label>' +
+                            '</div>'
+                        );
+                    });
+                } else {
+                    addList.append('<div class="text-muted small px-3 py-1"><?= t('no_friends_to_add') ?></div>');
+                }
+            } else {
+                $('#groupInfoAddDivider').addClass('d-none');
+                $('#groupInfoAddSection').addClass('d-none');
+            }
+            $('#groupInfoModal').modal('show');
+        }, 'json').fail(function() {
+            $('#groupInfoError').removeClass('d-none').text('<?= t('error_occurred') ?>');
+            $('#groupInfoModal').modal('show');
+        });
+    });
+
+    // Member search filter
+    $('#groupInfoMemberSearch').on('keyup', function() {
+        var q = $(this).val().toLowerCase();
+        $('#groupInfoAddList .group-add-friend-item').each(function() {
+            var label = $(this).find('label').text().toLowerCase();
+            $(this).toggle(label.indexOf(q) !== -1);
+        });
+    });
+
+    // Add members submit
+    $('#groupInfoAddBtn').on('click', function() {
+        var selected = [];
+        $('#groupInfoAddList .group-add-check:checked').each(function() { selected.push($(this).val()); });
+        if (!selected.length) return;
+        $.post('/api/chat.php', { action: 'add_group_members', chat_id: chatConvId, 'members[]': selected }, function(res) {
+            if (res.success) {
+                $('#groupInfoSuccess').removeClass('d-none').text('<?= t('add_members_success') ?>');
+                $('#groupInfoError').addClass('d-none');
+                // Remove added members from the list
+                selected.forEach(function(u) {
+                    $('#groupInfoAddList .group-add-check[value="' + u + '"]').closest('.group-add-friend-item').remove();
+                });
+            } else {
+                $('#groupInfoError').removeClass('d-none').text(res.message || '<?= t('error_occurred') ?>');
+                $('#groupInfoSuccess').addClass('d-none');
+            }
+        }, 'json').fail(function() {
+            $('#groupInfoError').removeClass('d-none').text('<?= t('error_occurred') ?>');
+        });
+    });
+}
+
 });
 </script>
 <?php endif; ?>

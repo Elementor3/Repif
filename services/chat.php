@@ -102,4 +102,46 @@ function searchUsers(mysqli $conn, string $query, string $excludeUsername): arra
     $stmt->execute();
     return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 }
+
+function getGroupInfo(mysqli $conn, int $chatId, string $currentUser): ?array {
+    if (!isParticipant($conn, $chatId, $currentUser)) return null;
+    $stmt = $conn->prepare("SELECT pk_conversationID, type, name, description, createdBy FROM chat_conversation WHERE pk_conversationID = ? AND type = 'group'");
+    $stmt->bind_param("i", $chatId);
+    $stmt->execute();
+    $conv = $stmt->get_result()->fetch_assoc();
+    if (!$conv) return null;
+    $stmt2 = $conn->prepare("SELECT u.pk_username, u.firstName, u.lastName, IF(cc.createdBy = u.pk_username, 'owner', 'member') AS role FROM chat_participant cp JOIN user u ON cp.fk_user = u.pk_username JOIN chat_conversation cc ON cc.pk_conversationID = cp.fk_conversation WHERE cp.fk_conversation = ? ORDER BY role ASC, u.firstName ASC");
+    $stmt2->bind_param("i", $chatId);
+    $stmt2->execute();
+    $members = $stmt2->get_result()->fetch_all(MYSQLI_ASSOC);
+    $stmt3 = $conn->prepare("SELECT u.pk_username, u.firstName, u.lastName FROM friendship f JOIN user u ON (CASE WHEN f.pk_user1 = ? THEN f.pk_user2 ELSE f.pk_user1 END) = u.pk_username WHERE (f.pk_user1 = ? OR f.pk_user2 = ?) AND u.pk_username NOT IN (SELECT cp.fk_user FROM chat_participant cp WHERE cp.fk_conversation = ?) ORDER BY u.firstName ASC");
+    $stmt3->bind_param("sssi", $currentUser, $currentUser, $currentUser, $chatId);
+    $stmt3->execute();
+    $addableFriends = $stmt3->get_result()->fetch_all(MYSQLI_ASSOC);
+    return [
+        'id' => (int)$conv['pk_conversationID'],
+        'name' => $conv['name'],
+        'description' => $conv['description'],
+        'createdBy' => $conv['createdBy'],
+        'members' => $members,
+        'addable_friends' => $addableFriends,
+    ];
+}
+
+function addGroupMembers(mysqli $conn, int $chatId, string $currentUser, array $usernames): bool {
+    $stmt = $conn->prepare("SELECT createdBy FROM chat_conversation WHERE pk_conversationID = ? AND type = 'group'");
+    $stmt->bind_param("i", $chatId);
+    $stmt->execute();
+    $conv = $stmt->get_result()->fetch_assoc();
+    if (!$conv || $conv['createdBy'] !== $currentUser) return false;
+    $now = date('Y-m-d H:i:s');
+    foreach ($usernames as $uname) {
+        $uname = trim((string)$uname);
+        if (!$uname) continue;
+        $ins = $conn->prepare("INSERT IGNORE INTO chat_participant (fk_conversation, fk_user, joinedAt) VALUES (?,?,?)");
+        $ins->bind_param("iss", $chatId, $uname, $now);
+        $ins->execute();
+    }
+    return true;
+}
 ?>
