@@ -1,10 +1,12 @@
 <?php
-require_once __DIR__ . '/../includes/header.php';
-requireAdmin();
+require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/i18n.php';
 require_once __DIR__ . '/../services/users.php';
 require_once __DIR__ . '/../services/stations.php';
 require_once __DIR__ . '/../services/admin_posts.php';
 require_once __DIR__ . '/../services/notifications.php';
+requireAdmin();
 
 $username = $_SESSION['username'];
 $msg = '';
@@ -114,6 +116,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $userPage = (int)($_GET['user_page'] ?? 1);
 $stationPage = (int)($_GET['station_page'] ?? 1);
 $postPage = (int)($_GET['post_page'] ?? 1);
+
+require_once __DIR__ . '/../includes/header.php';
 
 $totalUsers = adminCountUsers($conn);
 $totalStations = adminCountStations($conn);

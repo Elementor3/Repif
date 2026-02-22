@@ -140,5 +140,8 @@ return [
     'no_pending_requests' => 'Немає запитів, що очікують',
     'username_taken' => 'Ім\'я користувача вже зайнято',
     'email_registered' => 'Email вже зареєстровано',
+    'station_not_found' => 'Станцію не знайдено або вже зареєстровано',
+    'can_only_share_with_friends' => 'Можна поділитися лише з друзями',
+    'view_profile' => 'Переглянути профіль',
 ];
 ?>

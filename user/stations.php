@@ -1,7 +1,9 @@
 <?php
-require_once __DIR__ . '/../includes/header.php';
-requireLogin();
+require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/i18n.php';
 require_once __DIR__ . '/../services/stations.php';
+requireLogin();
 
 $username = $_SESSION['username'];
 $msg = '';
@@ -16,7 +18,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (registerStation($conn, $serial, $username)) {
                 $msg = t('success');
             } else {
-                $err = 'Station not found or already registered';
+                $err = t('station_not_found');
             }
         }
     } elseif ($action === 'update') {
@@ -40,6 +42,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 }
+
+require_once __DIR__ . '/../includes/header.php';
 
 $stations = getUserStationsList($conn, $username);
 ?>

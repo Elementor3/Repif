@@ -140,5 +140,8 @@ return [
     'no_pending_requests' => 'Aucune demande en attente',
     'username_taken' => 'Nom d\'utilisateur déjà pris',
     'email_registered' => 'Email déjà enregistré',
+    'station_not_found' => 'Station introuvable ou déjà enregistrée',
+    'can_only_share_with_friends' => 'Vous ne pouvez partager qu\'avec des amis',
+    'view_profile' => 'Voir le profil',
 ];
 ?>

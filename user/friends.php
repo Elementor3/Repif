@@ -1,9 +1,11 @@
 <?php
-require_once __DIR__ . '/../includes/header.php';
-requireLogin();
+require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/i18n.php';
 require_once __DIR__ . '/../services/friends.php';
 require_once __DIR__ . '/../services/users.php';
 require_once __DIR__ . '/../services/notifications.php';
+requireLogin();
 
 $username = $_SESSION['username'];
 $msg = '';
@@ -33,7 +35,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($action === 'accept') {
         $reqId = (int)($_POST['request_id'] ?? 0);
         if (acceptRequest($conn, $reqId, $username)) {
-            // Notify sender
             $stmt = $conn->prepare("SELECT fk_sender FROM request WHERE pk_requestID=?");
             $stmt->bind_param("i", $reqId);
             $stmt->execute();
@@ -53,6 +54,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 }
+
+require_once __DIR__ . '/../includes/header.php';
 
 $friends = getFriends($conn, $username);
 $pendingRequests = getPendingRequests($conn, $username);
@@ -136,6 +139,9 @@ if ($searchQuery) {
                             </div>
                         </div>
                         <div class="d-flex gap-1">
+                            <a href="/user/view_profile.php?user=<?= urlencode($f['pk_username']) ?>" class="btn btn-sm btn-outline-secondary">
+                                <i class="bi bi-person"></i>
+                            </a>
                             <a href="/user/chat.php?with=<?= urlencode($f['pk_username']) ?>" class="btn btn-sm btn-outline-primary">
                                 <i class="bi bi-chat"></i>
                             </a>

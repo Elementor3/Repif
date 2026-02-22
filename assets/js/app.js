@@ -44,7 +44,8 @@ $(function () {
                 });
                 $('#notifList').html(html);
             } else {
-                $('#notifList').html('<div class="text-center text-muted py-3">No notifications</div>');
+                var emptyMsg = $('#notifList').data('empty-msg') || 'No notifications';
+                $('#notifList').html('<div class="text-center text-muted py-3"></div>').find('div').text(emptyMsg);
             }
         }, 'json').fail(function () {});
     }
