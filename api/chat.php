@@ -140,12 +140,12 @@ if ($action === 'send') {
         echo json_encode(['success' => false, 'message' => 'Missing chat_id']);
         exit;
     }
-    $result = updateGroupConversation($conn, $chatId, $username, $name, $description);
-    if ($result === null) {
+    $updated  = updateGroupConversation($conn, $chatId, $username, $name, $description);
+    if ($updated  === null) {
         echo json_encode(['success' => false, 'message' => 'Not authorized or not a group chat']);
         exit;
     }
-    echo json_encode(['success' => true, 'data' => $result]);
+    echo json_encode(['success' => true, 'data' => $updated]);
 
 } elseif ($action === 'remove_group_member') {
     $chatId = (int)($_POST['chat_id'] ?? 0);

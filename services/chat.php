@@ -156,7 +156,7 @@ function updateGroupConversation(mysqli $conn, int $chatId, string $currentUser,
     $upd = $conn->prepare("UPDATE chat_conversation SET name=?, description=? WHERE pk_conversationID=?");
     $upd->bind_param("ssi", $newName, $newDesc, $chatId);
     if (!$upd->execute()) return null;
-    return ['name' => $newName, 'description' => $newDesc];
+    return ['id' => (int)$chatId, 'name' => $newName, 'description' => $newDesc];
 }
 
 function removeGroupMember(mysqli $conn, int $chatId, string $currentUser, string $memberUsername): bool {
