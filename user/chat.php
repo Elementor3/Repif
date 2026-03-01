@@ -145,9 +145,18 @@ $friends = getFriends($conn, $username);
                         <?php endif; ?>
                         <div class="bubble">
                             <?php if ($m['file_path']): ?>
-                                <a href="/uploads/chat/<?= e(basename($m['file_path'])) ?>" target="_blank" class="text-white d-block">
-                                    <i class="bi bi-file-earmark me-1"></i><?= e($m['file_name']) ?>
-                                </a>
+                                <?php
+                                $downloadUrl = '/download_chat_file.php?id=' . (int)$m['pk_messageID'];
+                                $fileName    = $m['file_name'] ?: basename($m['file_path']);
+                                ?>
+                                <div class="d-flex align-items-center justify-content-between">
+                                    <a href="<?= $downloadUrl ?>" target="_blank" class="text-white text-truncate me-2">
+                                        <i class="bi bi-file-earmark me-1"></i><?= e($fileName) ?>
+                                    </a>
+                                    <a href="<?= $downloadUrl ?>" class="btn btn-sm btn-outline-light">
+                                        <i class="bi bi-download"></i>
+                                    </a>
+                                </div>
                             <?php else: ?>
                                 <?= e($m['message'] ?? '') ?>
                             <?php endif; ?>
@@ -276,41 +285,56 @@ $friends = getFriends($conn, $username);
     </script>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
+            var chatSelectedFiles = [];
             var cm = document.getElementById('chatMessages');
             cm.scrollTop = cm.scrollHeight;
 
-            // Attachment preview
-            $('#chatFile').on('change', function() {
+            // Attachment preview with multiple files and per-file remove
+            function renderAttachmentPreview() {
                 var preview = $('#attachmentPreview');
                 preview.empty();
-                var files = this.files;
-                if (files.length) {
-                    $.each(files, function(i, f) {
-                        var pill = $('<span class="attachment-pill"></span>');
-                        pill.append($('<span></span>').text(f.name));
-                        var closeBtn = $('<button type="button" class="attachment-pill-close ms-1" aria-label="Remove">&times;</button>');
-                        closeBtn.on('click', function() {
-                            $('#chatFile').val('');
-                            preview.empty();
-                        });
-                        pill.append(closeBtn);
-                        preview.append(pill);
+                chatSelectedFiles.forEach(function(f, idx) {
+                    var pill = $('<span class="attachment-pill me-1 mb-1"></span>');
+                    pill.append($('<span></span>').text(f.name));
+                    var closeBtn = $('<button type="button" class="attachment-pill-close ms-1" aria-label="Remove">&times;</button>');
+                    closeBtn.on('click', function() {
+                        // remove only this file
+                        chatSelectedFiles.splice(idx, 1);
+                        renderAttachmentPreview();
                     });
+                    pill.append(closeBtn);
+                    preview.append(pill);
+                });
+                if (!chatSelectedFiles.length) {
+                    preview.empty();
                 }
+            }
+
+            $('#chatFile').on('change', function() {
+                var files = Array.from(this.files || []);
+                if (files.length) {
+                    chatSelectedFiles = chatSelectedFiles.concat(files);
+                }
+                // clear input so same files can be selected again later
+                $('#chatFile').val('');
+                renderAttachmentPreview();
             });
 
-            // Send message
+            // Send message (multiple files + text)
             $('#chatForm').on('submit', function(e) {
                 e.preventDefault();
                 var msg = $('#chatMsg').val().trim();
-                var file = $('#chatFile')[0].files[0];
-                if (!msg && !file) return;
+
+                if (!msg && !chatSelectedFiles.length) return;
 
                 var formData = new FormData();
                 formData.append('action', 'send');
                 formData.append('conversation_id', chatConvId);
                 formData.append('message', msg);
-                if (file) formData.append('file', file);
+
+                chatSelectedFiles.forEach(function(f) {
+                    formData.append('files[]', f);
+                });
 
                 $.ajax({
                     url: '/api/chat.php',
@@ -318,15 +342,21 @@ $friends = getFriends($conn, $username);
                     data: formData,
                     processData: false,
                     contentType: false,
+                    dataType: 'json',
                     success: function(res) {
                         if (res.success) {
                             $('#chatMsg').val('');
+                            chatSelectedFiles = [];
                             $('#chatFile').val('');
                             $('#attachmentPreview').empty();
                             loadNewMessages();
+                            if (res.errors && res.errors.length) {
+                                alert(res.errors.join('\n'));
+                            }
+                        } else if (res.message) {
+                            alert(res.message);
                         }
-                    },
-                    dataType: 'json'
+                    }
                 });
             });
 
@@ -339,12 +369,20 @@ $friends = getFriends($conn, $username);
             }
 
             function appendMessage(m) {
+                //console.log('appendMessage called with', m);
                 var isOwn = m.fk_sender === chatCurrentUser;
                 var html = '<div class="chat-message ' + (isOwn ? 'own' : 'other') + '">';
                 if (!isOwn) html += '<small class="text-muted d-block mb-1">' + esc(m.firstName + ' ' + m.lastName) + '</small>';
                 html += '<div class="bubble">';
                 if (m.file_name) {
-                    html += '<a href="/uploads/chat/' + encodeURIComponent(m.file_path.replace(/.*[\\/]/, '')) + '" target="_blank" class="text-white d-block"><i class="bi bi-file-earmark me-1"></i>' + esc(m.file_name) + '</a>';
+                    var viewUrl     = '/download_chat_file.php?id=' + encodeURIComponent(m.pk_messageID) + '&mode=view';
+                    var downloadUrl = '/download_chat_file.php?id=' + encodeURIComponent(m.pk_messageID);
+                    html += '<div class="d-flex align-items-center justify-content-between">';
+                    html += '<a href="' + viewUrl + '" target="_blank" class="text-white text-truncate me-2">';
+                    html += '<i class="bi bi-file-earmark me-1"></i>' + esc(m.file_name) + '</a>';
+                    html += '<a href="' + downloadUrl + '" class="btn btn-sm btn-outline-light" download>';
+                    html += '<i class="bi bi-download"></i></a>';
+                    html += '</div>';
                 } else {
                     html += esc(m.message || '');
                 }
@@ -359,6 +397,7 @@ $friends = getFriends($conn, $username);
                     conversation_id: chatConvId,
                     since_id: chatLastMsgId
                 }, function(res) {
+                    //console.log('loadNewMessages -> response', res);
                     if (res.success && res.messages.length) {
                         res.messages.forEach(function(m) {
                             appendMessage(m);

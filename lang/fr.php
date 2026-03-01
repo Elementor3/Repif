@@ -163,5 +163,11 @@ return [
     'confirm_remove_member' => 'Êtes-vous sûr de vouloir retirer ce membre ?',
     'save_description' => 'Enregistrer la description',
     'member_removed' => 'Membre retiré avec succès',
+    'file_type_not_allowed' => 'Ce type de fichier n’est pas autorisé',
+    'file_too_large'        => 'Le fichier est trop volumineux',
+    'file_upload_failed'    => 'Échec du téléversement du fichier',
+    'too_many_files'        => 'Trop de fichiers à la fois',
+    'empty_message'         => 'Message vide',
+    'invalid_request'       => 'Requête invalide',
+    'not_authorized'        => 'Vous n’êtes pas autorisé à effectuer cette action',
 ];
-?>
