@@ -159,5 +159,9 @@ return [
     'add' => 'Add',
     'today' => 'Today',
     'yesterday' => 'Yesterday',
+    'remove_member' => 'Remove Member',
+    'confirm_remove_member' => 'Are you sure you want to remove this member?',
+    'save_description' => 'Save Description',
+    'member_removed' => 'Member removed successfully',
 ];
 ?>

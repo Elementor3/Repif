@@ -180,6 +180,19 @@ body {
     border-radius: 0.375rem;
     padding: 0.25rem 0;
 }
+.group-member-list {
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.375rem;
+    padding: 0.25rem 0;
+}
+.group-member-item {
+    padding: 0.35rem 0.75rem;
+}
+.group-member-item:hover {
+    background-color: var(--bs-secondary-bg);
+}
 
 /* Notification badge */
 .notif-badge {

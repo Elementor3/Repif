@@ -159,5 +159,9 @@ return [
     'add' => 'Ajouter',
     'today' => 'Aujourd\'hui',
     'yesterday' => 'Hier',
+    'remove_member' => 'Retirer le membre',
+    'confirm_remove_member' => 'Êtes-vous sûr de vouloir retirer ce membre ?',
+    'save_description' => 'Enregistrer la description',
+    'member_removed' => 'Membre retiré avec succès',
 ];
 ?>

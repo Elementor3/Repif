@@ -144,4 +144,29 @@ function addGroupMembers(mysqli $conn, int $chatId, string $currentUser, array $
     }
     return true;
 }
+
+function updateGroupConversation(mysqli $conn, int $chatId, string $currentUser, ?string $name, ?string $description): ?array {
+    $stmt = $conn->prepare("SELECT pk_conversationID, name, description, createdBy FROM chat_conversation WHERE pk_conversationID = ? AND type = 'group'");
+    $stmt->bind_param("i", $chatId);
+    $stmt->execute();
+    $conv = $stmt->get_result()->fetch_assoc();
+    if (!$conv || $conv['createdBy'] !== $currentUser) return null;
+    $newName = ($name !== null && $name !== '') ? $name : $conv['name'];
+    $newDesc = ($description !== null) ? $description : $conv['description'];
+    $upd = $conn->prepare("UPDATE chat_conversation SET name=?, description=? WHERE pk_conversationID=?");
+    $upd->bind_param("ssi", $newName, $newDesc, $chatId);
+    if (!$upd->execute()) return null;
+    return ['name' => $newName, 'description' => $newDesc];
+}
+
+function removeGroupMember(mysqli $conn, int $chatId, string $currentUser, string $memberUsername): bool {
+    $stmt = $conn->prepare("SELECT createdBy FROM chat_conversation WHERE pk_conversationID = ? AND type = 'group'");
+    $stmt->bind_param("i", $chatId);
+    $stmt->execute();
+    $conv = $stmt->get_result()->fetch_assoc();
+    if (!$conv || $conv['createdBy'] !== $currentUser) return false;
+    // Cannot remove the owner
+    if ($memberUsername === $currentUser) return false;
+    return removeParticipant($conn, $chatId, $memberUsername);
+}
 ?>
