@@ -2,12 +2,18 @@
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../services/chat.php';
+require_once __DIR__ . '/../includes/i18n.php';
+
+// Chat file upload configuration
+$CHAT_ALLOWED_EXT = ['jpg','jpeg','png','csv','pdf','txt','doc','docx','zip'];
+$CHAT_MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB per file
+$CHAT_MAX_FILES_PER_MESSAGE = 5;        // max files per send
 
 header('Content-Type: application/json');
 
 if (!isLoggedIn()) {
     http_response_code(401);
-    echo json_encode(['success' => false, 'message' => 'Unauthorized']);
+    echo json_encode(['success' => false, 'message' => t('not_authorized')]);
     exit;
 }
 
@@ -15,41 +21,87 @@ $username = $_SESSION['username'];
 $action = $_GET['action'] ?? $_POST['action'] ?? '';
 
 if ($action === 'send') {
-    $convId = (int)($_POST['conversation_id'] ?? 0);
+    $convId  = (int)($_POST['conversation_id'] ?? 0);
     $message = trim($_POST['message'] ?? '');
-    $filePath = null;
-    $fileName = null;
-    $fileSize = null;
+    $files   = $_FILES['files'] ?? null;
 
-    if (!isParticipant($conn, $convId, $username)) {
-        echo json_encode(['success' => false, 'message' => 'Not a participant']);
+    if (!$convId) {
+        echo json_encode(['success' => false, 'message' => t('invalid_request')]);
         exit;
     }
 
-    if (!empty($_FILES['file']['tmp_name'])) {
-        $file = $_FILES['file'];
-        $allowed = ['jpg','jpeg','png','gif','pdf','txt','doc','docx','zip'];
-        $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-        if (in_array($ext, $allowed) && $file['size'] <= 10 * 1024 * 1024) {
+    // Проверяем, что пользователь участник беседы
+    if (!isParticipant($conn, $convId, $username)) {
+        echo json_encode(['success' => false, 'message' => t('not_authorized')]);
+        exit;
+    }
+
+    $fileErrors   = [];
+    $anyFileSaved = false;
+
+    // Обработка нескольких файлов
+    if ($files && isset($files['tmp_name']) && is_array($files['tmp_name'])) {
+        $count = count($files['tmp_name']);
+
+        if ($count > $CHAT_MAX_FILES_PER_MESSAGE) {
+            echo json_encode(['success' => false, 'message' => t('too_many_files')]);
+            exit;
+        }
+
+        for ($i = 0; $i < $count; $i++) {
+            if (empty($files['tmp_name'][$i])) {
+                continue;
+            }
+
+            $tmpName  = $files['tmp_name'][$i];
+            $origName = $files['name'][$i];
+            $size     = $files['size'][$i];
+
+            $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
+
+            if (!in_array($ext, $CHAT_ALLOWED_EXT, true)) {
+                $fileErrors[] = t('file_type_not_allowed') . ': ' . $origName;
+                continue;
+            }
+
+            if ($size > $CHAT_MAX_FILE_SIZE) {
+                $fileErrors[] = t('file_too_large') . ': ' . $origName;
+                continue;
+            }
+
             $newName = uniqid('chat_', true) . '.' . $ext;
-            $dest = __DIR__ . '/../uploads/chat/' . $newName;
-            if (move_uploaded_file($file['tmp_name'], $dest)) {
-                $filePath = $newName;
-                $fileName = $file['name'];
-                $fileSize = $file['size'];
+            $dest    = __DIR__ . '/../uploads/chat/' . $newName;
+
+            if (!move_uploaded_file($tmpName, $dest)) {
+                $fileErrors[] = t('file_upload_failed') . ': ' . $origName;
+                continue;
+            }
+
+            // Отдельное сообщение только с файлом
+            $msgId = sendMessage($conn, $convId, $username, null, $newName, $origName, $size);
+            if ($msgId > 0) {
+                $anyFileSaved = true;
             }
         }
     }
 
-    if (!$message && !$filePath) {
-        echo json_encode(['success' => false, 'message' => 'Empty message']);
+    // Если ни одного валидного файла не сохранили и нет текста
+    if (!$anyFileSaved && $message === '') {
+        $err = !empty($fileErrors) ? implode("\n", $fileErrors) : t('empty_message');
+        echo json_encode(['success' => false, 'message' => $err]);
         exit;
     }
 
-    $msgId = sendMessage($conn, $convId, $username, $message ?: null, $filePath, $fileName, $fileSize);
-    echo json_encode(['success' => $msgId > 0, 'messageId' => $msgId]);
+    // Текст отправляем ОТДЕЛЬНЫМ сообщением ПОСЛЕ файлов
+    if ($message !== '') {
+        sendMessage($conn, $convId, $username, $message, null, null, null);
+    }
 
-} elseif ($action === 'get_messages') {
+    echo json_encode([
+        'success' => true,
+        'errors'  => $fileErrors,
+    ]);
+    } elseif ($action === 'get_messages') {
     $convId = (int)($_GET['conversation_id'] ?? 0);
     $sinceId = (int)($_GET['since_id'] ?? 0);
 
@@ -140,12 +192,12 @@ if ($action === 'send') {
         echo json_encode(['success' => false, 'message' => 'Missing chat_id']);
         exit;
     }
-    $result = updateGroupConversation($conn, $chatId, $username, $name, $description);
-    if ($result === null) {
+    $updated  = updateGroupConversation($conn, $chatId, $username, $name, $description);
+    if ($updated  === null) {
         echo json_encode(['success' => false, 'message' => 'Not authorized or not a group chat']);
         exit;
     }
-    echo json_encode(['success' => true, 'data' => $result]);
+    echo json_encode(['success' => true, 'data' => $updated]);
 
 } elseif ($action === 'remove_group_member') {
     $chatId = (int)($_POST['chat_id'] ?? 0);
