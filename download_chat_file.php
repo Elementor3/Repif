@@ -13,7 +13,7 @@ if (!$username || !$fileId) {
     http_response_code(400);
     exit('Bad request');
 }
-
+$mode = $_GET['mode'] ?? 'download';
 // Find message with this id and ensure it has a file
 $stmt = $conn->prepare(
     "SELECT m.file_path, m.file_name, m.file_size, m.fk_conversation
@@ -55,12 +55,12 @@ if (in_array($ext, ['jpg','jpeg','png','gif'], true)) {
 } elseif (in_array($ext, ['txt'], true)) {
     $mime = 'text/plain';
 }
-
+$disposition = ($mode === 'view') ? 'inline' : 'attachment';
 // Headers
 header('Content-Type: ' . $mime);
 header('Content-Length: ' . filesize($fullPath));
 header(
-    'Content-Disposition: attachment; filename="' . rawurlencode($display) .
+    'Content-Disposition: ' . $disposition . '; filename="' . rawurlencode($display) . '"' .
     '"; filename*=UTF-8\'\'' . rawurlencode($display)
 );
 header('X-Content-Type-Options: nosniff');

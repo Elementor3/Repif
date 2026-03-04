@@ -146,11 +146,12 @@ $friends = getFriends($conn, $username);
                         <div class="bubble">
                             <?php if ($m['file_path']): ?>
                                 <?php
-                                $downloadUrl = '/download_chat_file.php?id=' . (int)$m['pk_messageID'];
+                                $viewUrl     = '/download_chat_file.php?id=' . (int)$m['pk_messageID'] . '&mode=view';
+                                $downloadUrl = '/download_chat_file.php?id=' . (int)$m['pk_messageID'] . '&mode=download';
                                 $fileName    = $m['file_name'] ?: basename($m['file_path']);
                                 ?>
                                 <div class="d-flex align-items-center justify-content-between">
-                                    <a href="<?= $downloadUrl ?>" target="_blank" class="text-white text-truncate me-2">
+                                    <a href="<?= $viewUrl ?>" target="_blank" class="text-white text-truncate me-2">
                                         <i class="bi bi-file-earmark me-1"></i><?= e($fileName) ?>
                                     </a>
                                     <a href="<?= $downloadUrl ?>" class="btn btn-sm btn-outline-light">
@@ -376,7 +377,7 @@ $friends = getFriends($conn, $username);
                 html += '<div class="bubble">';
                 if (m.file_name) {
                     var viewUrl     = '/download_chat_file.php?id=' + encodeURIComponent(m.pk_messageID) + '&mode=view';
-                    var downloadUrl = '/download_chat_file.php?id=' + encodeURIComponent(m.pk_messageID);
+                    var downloadUrl = '/download_chat_file.php?id=' + encodeURIComponent(m.pk_messageID) + '&mode=download';
                     html += '<div class="d-flex align-items-center justify-content-between">';
                     html += '<a href="' + viewUrl + '" target="_blank" class="text-white text-truncate me-2">';
                     html += '<i class="bi bi-file-earmark me-1"></i>' + esc(m.file_name) + '</a>';
