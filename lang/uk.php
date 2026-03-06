@@ -170,4 +170,8 @@ return [
     'empty_message'         => 'Порожнє повідомлення',
     'invalid_request'       => 'Некоректний запит',
     'not_authorized'        => 'Ви не маєте дозволу виконувати цю дію',
+    'clear' => 'Очистити',
+    'notification_details' => 'Деталі сповіщення',
+    'failed_to_load_notification' => 'Не вдалося завантажити сповіщення',
+    'failed_to_clear_notifications' => 'Не вдалося очистити сповіщення',
 ];

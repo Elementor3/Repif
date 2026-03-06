@@ -170,4 +170,8 @@ return [
     'empty_message'         => 'Message vide',
     'invalid_request'       => 'Requête invalide',
     'not_authorized'        => 'Vous n’êtes pas autorisé à effectuer cette action',
+    'clear' => 'Effacer',
+    'notification_details' => 'Détails de la notification',
+    'failed_to_load_notification' => 'Échec du chargement de la notification',
+    'failed_to_clear_notifications' => 'Échec de la suppression des notifications',
 ];

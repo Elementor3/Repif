@@ -170,4 +170,8 @@ return [
     'empty_message'         => 'Empty message',
     'invalid_request'       => 'Invalid request',
     'not_authorized'        => 'You are not allowed to perform this action',
+    'clear' => 'Clear',
+    'notification_details' => 'Notification details',
+    'failed_to_load_notification' => 'Failed to load notification',
+    'failed_to_clear_notifications' => 'Failed to clear notifications',
 ];

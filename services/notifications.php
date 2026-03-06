@@ -31,4 +31,18 @@ function markAllAsRead(mysqli $conn, string $username): bool {
     $stmt->bind_param("s", $username);
     return $stmt->execute();
 }
+
+function getNotificationById(mysqli $conn, int $notificationId, string $username): ?array {
+    $stmt = $conn->prepare("SELECT * FROM notification WHERE pk_notificationID=? AND fk_user=? LIMIT 1");
+    $stmt->bind_param("is", $notificationId, $username);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    return $row ?: null;
+}
+
+function clearNotifications(mysqli $conn, string $username): bool {
+    $stmt = $conn->prepare("DELETE FROM notification WHERE fk_user=?");
+    $stmt->bind_param("s", $username);
+    return $stmt->execute();
+}
 ?>

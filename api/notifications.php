@@ -22,16 +22,44 @@ if ($action === 'get_count') {
     $notifications = getNotifications($conn, $username, 50);
     echo json_encode(['success' => true, 'notifications' => $notifications]);
 
+} elseif ($action === 'get_one') {
+    $id = (int)($_GET['id'] ?? 0);
+    if ($id <= 0) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'message' => 'Invalid notification id']);
+        exit;
+    }
+
+    $notification = getNotificationById($conn, $id, $username);
+    if (!$notification) {
+        http_response_code(404);
+        echo json_encode(['success' => false, 'message' => 'Notification not found']);
+        exit;
+    }
+
+    echo json_encode(['success' => true, 'notification' => $notification]);
+
 } elseif ($action === 'mark_read') {
     $id = (int)($_POST['notificationId'] ?? 0);
-    markAsRead($conn, $id, $username);
-    echo json_encode(['success' => true]);
+    if ($id <= 0) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'message' => 'Invalid notification id']);
+        exit;
+    }
+
+    $ok = markAsRead($conn, $id, $username);
+    echo json_encode(['success' => (bool)$ok]);
 
 } elseif ($action === 'mark_all_read') {
-    markAllAsRead($conn, $username);
-    echo json_encode(['success' => true]);
+    $ok = markAllAsRead($conn, $username);
+    echo json_encode(['success' => (bool)$ok]);
+
+} elseif ($action === 'clear_all') {
+    $ok = clearNotifications($conn, $username);
+    echo json_encode(['success' => (bool)$ok]);
 
 } else {
+    http_response_code(400);
     echo json_encode(['success' => false, 'message' => 'Invalid action']);
 }
 ?>

@@ -19,63 +19,109 @@ $(function () {
 
     // Notification poll
     function loadNotifications() {
-        $.get('/api/notifications.php', { action: 'get_count' }, function (res) {
-            if (res.success) {
-                var count = res.count;
-                if (count > 0) {
-                    $('#notifBadge').text(count).removeClass('d-none');
-                } else {
-                    $('#notifBadge').addClass('d-none');
-                }
-            }
-        }, 'json').fail(function () {});
-    }
-
-    function loadNotificationList() {
-        $.get('/api/notifications.php', { action: 'get_all' }, function (res) {
-            if (res.success && res.notifications.length > 0) {
-                var html = '';
-                $.each(res.notifications, function (i, n) {
-                    html += '<div class="notif-item ' + (n.is_read == 0 ? 'unread' : '') + '" data-id="' + n.pk_notificationID + '">';
-                    html += '<div class="notif-title">' + $('<div>').text(n.title).html() + '</div>';
-                    html += '<div class="notif-msg">' + $('<div>').text(n.message).html() + '</div>';
-                    html += '<div class="notif-time">' + n.createdAt + '</div>';
-                    html += '</div>';
-                });
-                $('#notifList').html(html);
+    $.get('/api/notifications.php', { action: 'get_count' }, function (res) {
+        if (res.success) {
+            var count = res.count;
+            if (count > 0) {
+                $('#notifBadge').text(count).removeClass('d-none');
             } else {
-                var emptyMsg = $('#notifList').data('empty-msg') || 'No notifications';
-                $('#notifList').html('<div class="text-center text-muted py-3"></div>').find('div').text(emptyMsg);
+                $('#notifBadge').text('0').addClass('d-none');
             }
-        }, 'json').fail(function () {});
+        }
+    }, 'json').fail(function () {});
+}
+
+function renderEmptyNotifications() {
+    var emptyMsg = $('#notifList').data('empty-msg') || 'No notifications';
+    $('#notifList').html('<div class="text-center text-muted py-3"></div>').find('div').text(emptyMsg);
+}
+
+function loadNotificationList() {
+    $.get('/api/notifications.php', { action: 'get_all' }, function (res) {
+        if (res.success && res.notifications && res.notifications.length > 0) {
+            var html = '';
+            $.each(res.notifications, function (i, n) {
+                html += '<div class="notif-item ' + (n.is_read == 0 ? 'unread' : '') + '" data-id="' + n.pk_notificationID + '">';
+                html += '<div class="notif-title">' + $('<div>').text(n.title).html() + '</div>';
+                html += '<div class="notif-msg">' + $('<div>').text(n.message).html() + '</div>';
+                html += '<div class="notif-time">' + n.createdAt + '</div>';
+                html += '</div>';
+            });
+            $('#notifList').html(html);
+        } else {
+            renderEmptyNotifications();
+        }
+    }, 'json').fail(function () {});
+}
+
+function openNotificationModal(n) {
+    $('#notifModalTitle').text(n.title || '');
+    $('#notifModalMessage').text(n.message || '');
+    $('#notifModalTime').text(n.createdAt || '');
+
+    var modalEl = document.getElementById('notifDetailModal');
+    if (modalEl) {
+        var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+        modal.show();
     }
+}
 
-    if ($('#notifDropdown').length) {
-        loadNotifications();
-        setInterval(loadNotifications, 30000);
+if ($('#notifDropdown').length) {
+    loadNotifications();
+    setInterval(loadNotifications, 30000);
 
-        $('#notifDropdown').on('click', function () {
-            loadNotificationList();
+    $('#notifDropdown').on('click', function () {
+        loadNotificationList();
+    });
+
+    // Клик по уведомлению: mark read + get full + modal
+    $(document).on('click', '.notif-item', function () {
+        var $item = $(this);
+        var id = $item.data('id');
+
+        $item.removeClass('unread');
+
+        $.post('/api/notifications.php', { action: 'mark_read', notificationId: id }, function () {
+            loadNotifications();
+        }, 'json');
+
+        $.get('/api/notifications.php', { action: 'get_one', id: id }, function (res) {
+            if (res.success && res.notification) {
+                openNotificationModal(res.notification);
+            } else {
+                alert($('#notifList').data('load-error-msg') || 'Failed to load notification');
+            }
+        }, 'json').fail(function () {
+            alert($('#notifList').data('load-error-msg') || 'Failed to load notification');
         });
+    });
 
-        $(document).on('click', '.notif-item', function () {
-            var id = $(this).data('id');
-            $.post('/api/notifications.php', { action: 'mark_read', notificationId: id }, function () {
+    // Mark all read: только read, без удаления
+    $('#markAllReadBtn').on('click', function (e) {
+        e.preventDefault();
+        $.post('/api/notifications.php', { action: 'mark_all_read' }, function (res) {
+            if (res.success) {
                 loadNotifications();
-            }, 'json');
-            $(this).removeClass('unread');
-        });
+                loadNotificationList();
+            }
+        }, 'json');
+    });
 
-        $('#markAllReadBtn').on('click', function (e) {
-            e.preventDefault();
-            $.post('/api/notifications.php', { action: 'mark_all_read' }, function (res) {
-                if (res.success) {
-                    loadNotifications();
-                    loadNotificationList();
-                }
-            }, 'json');
+    // Clear: удаляет все уведомления текущего пользователя
+    $('#clearNotifBtn').on('click', function (e) {
+        e.preventDefault();
+        $.post('/api/notifications.php', { action: 'clear_all' }, function (res) {
+            if (res.success) {
+                renderEmptyNotifications();
+                $('#notifBadge').text('0').addClass('d-none');
+            } else {
+                alert($('#notifList').data('clear-error-msg') || 'Failed to clear notifications');
+            }
+        }, 'json').fail(function () {
+            alert($('#notifList').data('clear-error-msg') || 'Failed to clear notifications');
         });
-    }
+    });
+}
 
     // Global AJAX error handler
     $(document).ajaxError(function (event, xhr, settings, error) {
