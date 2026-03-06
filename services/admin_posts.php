@@ -39,4 +39,36 @@ function deletePost(mysqli $conn, int $id): bool {
     $stmt->bind_param("i", $id);
     return $stmt->execute();
 }
+
+function getPostAudienceRecipients(mysqli $conn, string $audience, array $selectedUsernames = []): array {
+    $audience = strtolower(trim($audience));
+
+    if ($audience === 'admins') {
+        $result = $conn->query("SELECT pk_username FROM user WHERE role='Admin'");
+        return $result ? array_column($result->fetch_all(MYSQLI_ASSOC), 'pk_username') : [];
+    }
+
+    if ($audience === 'users') {
+        $result = $conn->query("SELECT pk_username FROM user WHERE role='User'");
+        return $result ? array_column($result->fetch_all(MYSQLI_ASSOC), 'pk_username') : [];
+    }
+
+    if ($audience === 'selected') {
+        $selectedUsernames = array_values(array_unique(array_filter(array_map('trim', $selectedUsernames))));
+        if (empty($selectedUsernames)) {
+            return [];
+        }
+
+        $escaped = array_map(function ($u) use ($conn) {
+            return "'" . $conn->real_escape_string($u) . "'";
+        }, $selectedUsernames);
+
+        $sql = "SELECT pk_username FROM user WHERE pk_username IN (" . implode(',', $escaped) . ")";
+        $result = $conn->query($sql);
+        return $result ? array_column($result->fetch_all(MYSQLI_ASSOC), 'pk_username') : [];
+    }
+
+    $result = $conn->query("SELECT pk_username FROM user");
+    return $result ? array_column($result->fetch_all(MYSQLI_ASSOC), 'pk_username') : [];
+}
 ?>

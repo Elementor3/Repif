@@ -16,6 +16,10 @@ if (!isLoggedIn() || !isAdmin()) {
 }
 
 $action = $_REQUEST['action'] ?? '';
+$postTitleMaxLen = 120;
+$titleLen = function (string $text): int {
+    return function_exists('mb_strlen') ? mb_strlen($text) : strlen($text);
+};
 
 switch ($action) {
     // --- USERS ---
@@ -114,17 +118,30 @@ switch ($action) {
     case 'create_post':
         $title   = trim($_POST['title'] ?? '');
         $content = trim($_POST['content'] ?? '');
+        $audience = trim($_POST['audience'] ?? 'all');
+        $selectedRecipients = $_POST['recipients'] ?? [];
+        if (!is_array($selectedRecipients)) {
+            $selectedRecipients = [];
+        }
         if (!$title || !$content) {
             echo json_encode(['success' => false, 'message' => 'Missing fields']); exit;
+        }
+        if ($titleLen($title) > $postTitleMaxLen) {
+            echo json_encode(['success' => false, 'message' => 'Title is too long']); exit;
         }
         $postId = createPost($conn, $_SESSION['username'], $title, $content);
         if (!$postId) { echo json_encode(['success' => false]); exit; }
 
-        // Notify all users
-        $users = $conn->query("SELECT pk_username, email FROM user");
-        while ($u = $users->fetch_assoc()) {
-            createNotification($conn, $u['pk_username'], 'admin_post', $title, substr(strip_tags($content), 0, 200), '/user/dashboard.php');
-            sendEmail($u['email'], $title, '<h2>' . htmlspecialchars($title) . '</h2><p>' . nl2br(htmlspecialchars($content)) . '</p>');
+        $recipientUsernames = getPostAudienceRecipients($conn, $audience, $selectedRecipients);
+        if ($audience === 'selected' && empty($recipientUsernames)) {
+            echo json_encode(['success' => false, 'message' => 'Select at least one recipient']); exit;
+        }
+        foreach ($recipientUsernames as $recipientUsername) {
+            createNotification($conn, $recipientUsername, 'admin_post', $title, strip_tags($content), '/user/dashboard.php?post_id=' . $postId);
+            $user = getUserByUsername($conn, $recipientUsername);
+            if ($user && !empty($user['email'])) {
+                sendEmail($user['email'], $title, '<h2>' . htmlspecialchars($title) . '</h2><p>' . nl2br(htmlspecialchars($content)) . '</p>');
+            }
         }
         echo json_encode(['success' => true, 'postId' => $postId]);
         break;
@@ -133,16 +150,36 @@ switch ($action) {
         $id      = (int)($_POST['id'] ?? 0);
         $title   = trim($_POST['title'] ?? '');
         $content = trim($_POST['content'] ?? '');
+        $audience = trim($_POST['audience'] ?? 'all');
+        $selectedRecipients = $_POST['recipients'] ?? [];
+        if (!is_array($selectedRecipients)) {
+            $selectedRecipients = [];
+        }
         if (!$id || !$title || !$content) {
             echo json_encode(['success' => false, 'message' => 'Missing fields']); exit;
         }
+        if ($titleLen($title) > $postTitleMaxLen) {
+            echo json_encode(['success' => false, 'message' => 'Title is too long']); exit;
+        }
+        $recipients = getPostAudienceRecipients($conn, $audience, $selectedRecipients);
+        if ($audience === 'selected' && empty($recipients)) {
+            echo json_encode(['success' => false, 'message' => 'Select at least one recipient']); exit;
+        }
+        $existingPost = getPostById($conn, $id);
         $ok = updatePost($conn, $id, $title, $content);
+        if ($ok) {
+            $ok = replaceAdminPostNotifications($conn, $id, $title, strip_tags($content), $recipients, $existingPost['title'] ?? null);
+        }
         echo json_encode(['success' => $ok]);
         break;
 
     case 'delete_post':
         $id = (int)($_POST['id'] ?? 0);
+        $existingPost = getPostById($conn, $id);
         $ok = deletePost($conn, $id);
+        if ($ok) {
+            $ok = deleteAdminPostNotifications($conn, $id, $existingPost['title'] ?? null);
+        }
         echo json_encode(['success' => $ok]);
         break;
 
