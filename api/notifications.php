@@ -58,6 +58,17 @@ if ($action === 'get_count') {
     $ok = clearNotifications($conn, $username);
     echo json_encode(['success' => (bool)$ok]);
 
+} elseif ($action === 'delete_one') {
+    $id = (int)($_POST['notificationId'] ?? 0);
+    if ($id <= 0) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'message' => 'Invalid notification id']);
+        exit;
+    }
+
+    $ok = deleteNotification($conn, $id, $username);
+    echo json_encode(['success' => (bool)$ok]);
+
 } else {
     http_response_code(400);
     echo json_encode(['success' => false, 'message' => 'Invalid action']);

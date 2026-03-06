@@ -86,12 +86,13 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                 <div class="d-flex justify-content-between align-items-center px-3 py-2 border-bottom">
                                     <strong><?= t('notifications') ?></strong>
                                     <a href="#" class="small text-muted" id="markAllReadBtn"><?= t('mark_all_read') ?></a>
-                                    <a href="#" class="small text-danger" id="clearNotifBtn"><?= t('clear') ?></a>
+                                    <a href="#" class="small text-danger" id="clearNotifBtn"><?= t('clear_all') ?></a>
                                 </div>
                                 <div id="notifList"
                                     data-empty-msg="<?= e(t('no_notifications')) ?>"
                                     data-load-error-msg="<?= e(t('failed_to_load_notification')) ?>"
                                     data-clear-error-msg="<?= e(t('failed_to_clear_notifications')) ?>"
+                                    data-delete-error-msg="<?= e(t('failed_to_delete_notification')) ?>"
                                     style="max-height:300px;overflow-y:auto;">
                                     <div class="text-center text-muted py-3"><?= t('no_notifications') ?></div>
                                 </div>

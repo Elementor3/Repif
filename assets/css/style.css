@@ -189,6 +189,15 @@ body {
     margin-bottom: 0;
 }
 
+.post-card-title {
+    display: block;
+    min-width: 0;
+    max-width: calc(100% - 210px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 /* Notification badge */
 .notif-badge {
     font-size: 0.65rem;
@@ -200,6 +209,8 @@ body {
     border-bottom: 1px solid var(--bs-border-color);
     cursor: pointer;
     transition: background 0.15s;
+    position: relative;
+    padding-right: 2rem;
 }
 .notif-item:hover {
     background-color: var(--bs-secondary-bg);
@@ -210,14 +221,44 @@ body {
 .notif-item .notif-title {
     font-weight: 600;
     font-size: 0.85rem;
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 .notif-item .notif-msg {
     font-size: 0.8rem;
     color: var(--bs-secondary-color);
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 .notif-item .notif-time {
     font-size: 0.72rem;
     color: var(--bs-tertiary-color);
+}
+
+.notif-delete-btn {
+    position: absolute;
+    top: 0.35rem;
+    right: 0.45rem;
+    border: none;
+    background: transparent;
+    color: var(--bs-secondary-color);
+    font-size: 1rem;
+    line-height: 1;
+    padding: 0.1rem 0.25rem;
+    cursor: pointer;
+}
+
+.notif-delete-btn:hover {
+    color: var(--bs-danger);
+}
+
+#notifModalMessage {
+    white-space: pre-line;
+    word-break: break-word;
 }
 
 /* Avatar grid */

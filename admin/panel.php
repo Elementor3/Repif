@@ -14,6 +14,10 @@ $err = '';
 
 $activeTab = $_GET['tab'] ?? 'overview';
 $perPage = 15;
+$postTitleMaxLen = 120;
+$titleLen = function (string $text): int {
+    return function_exists('mb_strlen') ? mb_strlen($text) : strlen($text);
+};
 
 // Handle POST actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -88,27 +92,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     elseif ($action === 'create_post') {
         $title = trim($_POST['title'] ?? '');
         $content = trim($_POST['content'] ?? '');
+        $audience = trim($_POST['audience'] ?? 'all');
+        $selectedRecipients = $_POST['recipients'] ?? [];
+        if (!is_array($selectedRecipients)) {
+            $selectedRecipients = [];
+        }
         if ($title && $content) {
+            if ($titleLen($title) > $postTitleMaxLen) {
+                $err = t('post_title_too_long') . ' (' . $postTitleMaxLen . ')';
+            } else {
+            $recipients = getPostAudienceRecipients($conn, $audience, $selectedRecipients);
+            if ($audience === 'selected' && empty($recipients)) {
+                $err = t('select_at_least_one_recipient');
+            } else {
             $postId = createPost($conn, $username, $title, $content);
             if ($postId) {
-                // Notify all users
-                $allUsers = $conn->query("SELECT pk_username FROM user")->fetch_all(MYSQLI_ASSOC);
-                foreach ($allUsers as $u) {
-                    if ($u['pk_username'] !== $username) {
-                        createNotification($conn, $u['pk_username'], 'admin_post', t('admin_post'), $title, '/admin/panel.php?tab=posts');
-                    }
+                foreach ($recipients as $recipientUsername) {
+                    createNotification($conn, $recipientUsername, 'admin_post', $title, strip_tags($content), '/user/dashboard.php?post_id=' . $postId);
                 }
                 $msg = t('success');
+            }
+            }
             }
         }
     } elseif ($action === 'update_post') {
         $id = (int)($_POST['post_id'] ?? 0);
         $title = trim($_POST['title'] ?? '');
         $content = trim($_POST['content'] ?? '');
-        if (updatePost($conn, $id, $title, $content)) $msg = t('success');
+        $audience = trim($_POST['audience'] ?? 'all');
+        $selectedRecipients = $_POST['recipients'] ?? [];
+        if (!is_array($selectedRecipients)) {
+            $selectedRecipients = [];
+        }
+        $recipients = getPostAudienceRecipients($conn, $audience, $selectedRecipients);
+        $existingPost = getPostById($conn, $id);
+        if ($titleLen($title) > $postTitleMaxLen) {
+            $err = t('post_title_too_long') . ' (' . $postTitleMaxLen . ')';
+        } elseif ($audience === 'selected' && empty($recipients)) {
+            $err = t('select_at_least_one_recipient');
+        } elseif (updatePost($conn, $id, $title, $content)) {
+            replaceAdminPostNotifications($conn, $id, $title, strip_tags($content), $recipients, $existingPost['title'] ?? null);
+            $msg = t('success');
+        }
     } elseif ($action === 'delete_post') {
         $id = (int)($_POST['post_id'] ?? 0);
-        if (deletePost($conn, $id)) $msg = t('success');
+        $existingPost = getPostById($conn, $id);
+        if (deletePost($conn, $id)) {
+            deleteAdminPostNotifications($conn, $id, $existingPost['title'] ?? null);
+            $msg = t('success');
+        }
     }
 }
 
@@ -127,6 +159,29 @@ $totalColls = (int)$conn->query("SELECT COUNT(*) AS c FROM collection")->fetch_a
 $users = adminGetUsersPage($conn, $userPage, $perPage);
 $stations = adminGetStationsPage($conn, $stationPage, $perPage);
 $posts = getPosts($conn, $postPage, $perPage);
+$postTargetUsers = $conn->query("SELECT pk_username, firstName, lastName, role FROM user ORDER BY firstName ASC, lastName ASC, pk_username ASC")->fetch_all(MYSQLI_ASSOC);
+
+$allUsernames = array_column($postTargetUsers, 'pk_username');
+$adminUsernames = array_column(array_values(array_filter($postTargetUsers, function ($u) {
+    return ($u['role'] ?? '') === 'Admin';
+})), 'pk_username');
+$regularUsernames = array_column(array_values(array_filter($postTargetUsers, function ($u) {
+    return ($u['role'] ?? '') === 'User';
+})), 'pk_username');
+
+function sameUserSet(array $a, array $b): bool {
+    sort($a);
+    sort($b);
+    return $a === $b;
+}
+
+function detectPostAudience(array $recipients, array $allUsernames, array $regularUsernames, array $adminUsernames): string {
+    $recipients = array_values(array_unique($recipients));
+    if (sameUserSet($recipients, $allUsernames)) return 'all';
+    if (sameUserSet($recipients, $regularUsernames)) return 'users';
+    if (sameUserSet($recipients, $adminUsernames)) return 'admins';
+    return 'selected';
+}
 ?>
 <h2 class="mb-4"><i class="bi bi-shield-lock me-2"></i><?= t('admin_panel') ?></h2>
 
@@ -352,12 +407,18 @@ $posts = getPosts($conn, $postPage, $perPage);
 <div class="alert alert-info">No posts yet</div>
 <?php else: ?>
 <?php foreach ($posts as $p): ?>
+<?php
+    $postRecipients = getAdminPostNotificationRecipients($conn, (int)$p['pk_postID']);
+    $editPayload = $p;
+    $editPayload['recipients'] = $postRecipients;
+    $editPayload['audience'] = detectPostAudience($postRecipients, $allUsernames, $regularUsernames, $adminUsernames);
+?>
 <div class="card mb-3">
     <div class="card-header d-flex justify-content-between align-items-center">
-        <strong><?= e($p['title']) ?></strong>
+        <strong class="post-card-title" title="<?= e($p['title']) ?>"><?= e($p['title']) ?></strong>
         <div class="d-flex gap-1 align-items-center">
             <small class="text-muted me-2"><?= formatDateTime($p['createdAt']) ?></small>
-            <button class="btn btn-sm btn-outline-primary" onclick="editPost(<?= htmlspecialchars(json_encode($p), ENT_QUOTES) ?>)"><i class="bi bi-pencil"></i></button>
+            <button class="btn btn-sm btn-outline-primary" onclick="editPost(<?= htmlspecialchars(json_encode($editPayload), ENT_QUOTES) ?>)"><i class="bi bi-pencil"></i></button>
             <form method="post" class="d-inline">
                 <input type="hidden" name="action" value="delete_post">
                 <input type="hidden" name="post_id" value="<?= $p['pk_postID'] ?>">
@@ -380,8 +441,36 @@ $posts = getPosts($conn, $postPage, $perPage);
             <form method="post">
                 <input type="hidden" name="action" value="create_post">
                 <div class="modal-body">
-                    <div class="mb-3"><label class="form-label"><?= t('post_title') ?></label><input type="text" name="title" class="form-control" required></div>
+                    <div class="mb-3"><label class="form-label"><?= t('post_title') ?></label><input type="text" name="title" class="form-control" maxlength="<?= $postTitleMaxLen ?>" required></div>
                     <div class="mb-3"><label class="form-label"><?= t('post_content') ?></label><textarea name="content" class="form-control" rows="6" required></textarea></div>
+                    <div class="mb-3">
+                        <label class="form-label"><?= t('post_visibility') ?></label>
+                        <select name="audience" id="postAudience" class="form-select">
+                            <option value="all"><?= t('post_target_all') ?></option>
+                            <option value="users"><?= t('post_target_users') ?></option>
+                            <option value="admins"><?= t('post_target_admins') ?></option>
+                            <option value="selected"><?= t('post_target_selected') ?></option>
+                        </select>
+                    </div>
+                    <div class="mb-3 d-none" id="postRecipientsWrap">
+                        <label class="form-label"><?= t('select_recipients') ?></label>
+                        <input type="text" id="postRecipientsSearch" class="form-control form-control-sm mb-2" placeholder="<?= t('search_members') ?>">
+                        <div id="postRecipientsList" class="group-member-list mb-1">
+                            <?php foreach ($postTargetUsers as $pu): ?>
+                                <?php $recipientId = 'post_recipient_' . $pu['pk_username']; ?>
+                                <div class="group-member-item form-check">
+                                    <input class="form-check-input post-recipient-check" type="checkbox" name="recipients[]" value="<?= e($pu['pk_username']) ?>" id="<?= e($recipientId) ?>">
+                                    <label class="form-check-label" for="<?= e($recipientId) ?>">
+                                        <?= e($pu['firstName'] . ' ' . $pu['lastName']) ?>
+                                        <small class="text-muted d-block">@<?= e($pu['pk_username']) ?> (<?= e($pu['role']) ?>)</small>
+                                    </label>
+                                </div>
+                            <?php endforeach; ?>
+                            <?php if (empty($postTargetUsers)): ?>
+                                <div class="text-muted small px-3 py-1"><?= t('no_users_found') ?></div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
                 </div>
                 <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><?= t('cancel') ?></button><button type="submit" class="btn btn-primary"><?= t('publish') ?></button></div>
             </form>
@@ -398,8 +487,36 @@ $posts = getPosts($conn, $postPage, $perPage);
                 <input type="hidden" name="action" value="update_post">
                 <input type="hidden" name="post_id" id="editPostId">
                 <div class="modal-body">
-                    <div class="mb-3"><label class="form-label"><?= t('post_title') ?></label><input type="text" name="title" id="editPostTitle" class="form-control" required></div>
+                    <div class="mb-3"><label class="form-label"><?= t('post_title') ?></label><input type="text" name="title" id="editPostTitle" class="form-control" maxlength="<?= $postTitleMaxLen ?>" required></div>
                     <div class="mb-3"><label class="form-label"><?= t('post_content') ?></label><textarea name="content" id="editPostContent" class="form-control" rows="6" required></textarea></div>
+                    <div class="mb-3">
+                        <label class="form-label"><?= t('post_visibility') ?></label>
+                        <select name="audience" id="editPostAudience" class="form-select">
+                            <option value="all"><?= t('post_target_all') ?></option>
+                            <option value="users"><?= t('post_target_users') ?></option>
+                            <option value="admins"><?= t('post_target_admins') ?></option>
+                            <option value="selected"><?= t('post_target_selected') ?></option>
+                        </select>
+                    </div>
+                    <div class="mb-3 d-none" id="editPostRecipientsWrap">
+                        <label class="form-label"><?= t('select_recipients') ?></label>
+                        <input type="text" id="editPostRecipientsSearch" class="form-control form-control-sm mb-2" placeholder="<?= t('search_members') ?>">
+                        <div id="editPostRecipientsList" class="group-member-list mb-1">
+                            <?php foreach ($postTargetUsers as $pu): ?>
+                                <?php $editRecipientId = 'edit_post_recipient_' . $pu['pk_username']; ?>
+                                <div class="group-member-item form-check">
+                                    <input class="form-check-input edit-post-recipient-check" type="checkbox" name="recipients[]" value="<?= e($pu['pk_username']) ?>" id="<?= e($editRecipientId) ?>">
+                                    <label class="form-check-label" for="<?= e($editRecipientId) ?>">
+                                        <?= e($pu['firstName'] . ' ' . $pu['lastName']) ?>
+                                        <small class="text-muted d-block">@<?= e($pu['pk_username']) ?> (<?= e($pu['role']) ?>)</small>
+                                    </label>
+                                </div>
+                            <?php endforeach; ?>
+                            <?php if (empty($postTargetUsers)): ?>
+                                <div class="text-muted small px-3 py-1"><?= t('no_users_found') ?></div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
                 </div>
                 <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><?= t('cancel') ?></button><button type="submit" class="btn btn-primary"><?= t('save') ?></button></div>
             </form>
@@ -428,7 +545,55 @@ function editPost(p) {
     document.getElementById('editPostId').value = p.pk_postID;
     document.getElementById('editPostTitle').value = p.title;
     document.getElementById('editPostContent').value = p.content;
+
+    var editAudience = document.getElementById('editPostAudience');
+    var editRecipientChecks = document.querySelectorAll('#editPostRecipientsList .edit-post-recipient-check');
+    var recipients = Array.isArray(p.recipients) ? p.recipients : [];
+
+    if (editAudience) {
+        editAudience.value = p.audience || 'selected';
+    }
+
+    editRecipientChecks.forEach(function (cb) {
+        cb.checked = recipients.indexOf(cb.value) !== -1;
+    });
+
+    syncRecipientsVisibilityByIds('editPostAudience', 'editPostRecipientsWrap');
     new bootstrap.Modal(document.getElementById('editPostModal')).show();
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    bindAudienceAndSearch('postAudience', 'postRecipientsWrap', 'postRecipientsSearch', '#postRecipientsList .group-member-item');
+    bindAudienceAndSearch('editPostAudience', 'editPostRecipientsWrap', 'editPostRecipientsSearch', '#editPostRecipientsList .group-member-item');
+});
+
+function syncRecipientsVisibilityByIds(audienceId, wrapId) {
+    var audienceEl = document.getElementById(audienceId);
+    var recipientsWrap = document.getElementById(wrapId);
+    if (!audienceEl || !recipientsWrap) return;
+    recipientsWrap.classList.toggle('d-none', audienceEl.value !== 'selected');
+}
+
+function bindAudienceAndSearch(audienceId, wrapId, searchId, itemsSelector) {
+    var audienceEl = document.getElementById(audienceId);
+    var recipientsSearch = document.getElementById(searchId);
+
+    if (audienceEl) {
+        audienceEl.addEventListener('change', function () {
+            syncRecipientsVisibilityByIds(audienceId, wrapId);
+        });
+        syncRecipientsVisibilityByIds(audienceId, wrapId);
+    }
+
+    if (recipientsSearch) {
+        recipientsSearch.addEventListener('input', function () {
+            var q = recipientsSearch.value.toLowerCase();
+            var items = document.querySelectorAll(itemsSelector);
+            items.forEach(function (item) {
+                item.style.display = item.textContent.toLowerCase().indexOf(q) !== -1 ? '' : 'none';
+            });
+        });
+    }
 }
 </script>
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
