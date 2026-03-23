@@ -1,9 +1,35 @@
 <?php
+require_once __DIR__ . '/../includes/mailer.php';
+
 function createNotification(mysqli $conn, string $username, string $type, string $title, string $message, ?string $link = null): bool {
     $now = date('Y-m-d H:i:s');
     $stmt = $conn->prepare("INSERT INTO notification (fk_user, type, title, message, link, createdAt) VALUES (?,?,?,?,?,?)");
     $stmt->bind_param("ssssss", $username, $type, $title, $message, $link, $now);
-    return $stmt->execute();
+    $ok = $stmt->execute();
+
+    if ($ok) {
+        $stmtUser = $conn->prepare("SELECT email FROM user WHERE pk_username=? LIMIT 1");
+        $stmtUser->bind_param("s", $username);
+        $stmtUser->execute();
+        $user = $stmtUser->get_result()->fetch_assoc();
+
+        if (!empty($user['email'])) {
+            $linkHtml = '';
+            if (!empty($link)) {
+                $baseUrl = defined('APP_URL') ? rtrim(APP_URL, '/') : 'http://localhost';
+                $fullLink = $baseUrl . '/' . ltrim($link, '/');
+                $linkHtml = '<p><a href="' . htmlspecialchars($fullLink, ENT_QUOTES, 'UTF-8') . '">Open in WeatherStation</a></p>';
+            }
+
+            $body = '<h3 style="margin:0 0 10px 0;">' . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . '</h3>'
+                . '<p style="margin:0 0 10px 0;white-space:pre-line;">' . nl2br(htmlspecialchars($message, ENT_QUOTES, 'UTF-8')) . '</p>'
+                . $linkHtml;
+
+            sendEmail($user['email'], $title, $body);
+        }
+    }
+
+    return $ok;
 }
 
 function getNotifications(mysqli $conn, string $username, int $limit = 50): array {

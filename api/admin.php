@@ -5,7 +5,6 @@ require_once __DIR__ . '/../services/users.php';
 require_once __DIR__ . '/../services/stations.php';
 require_once __DIR__ . '/../services/admin_posts.php';
 require_once __DIR__ . '/../services/notifications.php';
-require_once __DIR__ . '/../includes/mailer.php';
 
 header('Content-Type: application/json');
 
@@ -138,10 +137,6 @@ switch ($action) {
         }
         foreach ($recipientUsernames as $recipientUsername) {
             createNotification($conn, $recipientUsername, 'admin_post', $title, strip_tags($content), '/user/dashboard.php?post_id=' . $postId);
-            $user = getUserByUsername($conn, $recipientUsername);
-            if ($user && !empty($user['email'])) {
-                sendEmail($user['email'], $title, '<h2>' . htmlspecialchars($title) . '</h2><p>' . nl2br(htmlspecialchars($content)) . '</p>');
-            }
         }
         echo json_encode(['success' => true, 'postId' => $postId]);
         break;
