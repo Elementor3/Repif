@@ -17,8 +17,9 @@ function getUserByEmail(mysqli $conn, string $email): ?array {
 
 function createUser(mysqli $conn, string $username, string $firstName, string $lastName, string $email, string $password, string $role = 'User'): bool {
     $hash = password_hash($password, PASSWORD_DEFAULT);
-    $stmt = $conn->prepare("INSERT INTO user (pk_username, firstName, lastName, email, password_hash, role) VALUES (?,?,?,?,?,?)");
-    $stmt->bind_param("ssssss", $username, $firstName, $lastName, $email, $hash, $role);
+    $now = date('Y-m-d H:i:s');
+    $stmt = $conn->prepare("INSERT INTO user (pk_username, firstName, lastName, email, password_hash, role, createdAt) VALUES (?,?,?,?,?,?,?)");
+    $stmt->bind_param("sssssss", $username, $firstName, $lastName, $email, $hash, $role, $now);
     return $stmt->execute();
 }
 

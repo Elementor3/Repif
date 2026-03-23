@@ -2,7 +2,9 @@
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/i18n.php';
+require_once __DIR__ . '/../includes/mailer.php';
 require_once __DIR__ . '/../services/users.php';
+require_once __DIR__ . '/../services/email_verification.php';
 
 if (isLoggedIn()) {
     header('Location: /user/dashboard.php');
@@ -10,17 +12,34 @@ if (isLoggedIn()) {
 }
 
 $error = '';
+if (isset($_GET['verify_required'])) {
+    $error = t('email_not_verified');
+}
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    ensureEmailVerificationSchema($conn);
     $username = trim($_POST['username'] ?? '');
     $password = $_POST['password'] ?? '';
     if ($username && $password) {
         $user = getUserByUsername($conn, $username);
         if ($user && password_verify($password, $user['password_hash'])) {
+            if (array_key_exists('email_verified', $user) && (int)$user['email_verified'] !== 1) {
+                $token = createEmailVerificationToken($conn, $user['pk_username']);
+                if ($token && !empty($user['email'])) {
+                    $verifyLink = rtrim(APP_URL, '/') . '/auth/verify_email.php?token=' . urlencode($token);
+                    $verifyBody = '<p>' . t('verify_email_message') . '</p>'
+                        . '<p><a href="' . htmlspecialchars($verifyLink, ENT_QUOTES, 'UTF-8') . '">' . t('verify_email_button') . '</a></p>';
+                    sendEmail($user['email'], t('verify_email_subject'), $verifyBody);
+                }
+                $error = t('email_not_verified');
+                goto render_login;
+            }
+
             $_SESSION['username'] = $user['pk_username'];
             $_SESSION['firstName'] = $user['firstName'];
             $_SESSION['lastName'] = $user['lastName'];
             $_SESSION['full_name'] = $user['firstName'] . ' ' . $user['lastName'];
             $_SESSION['is_admin'] = $user['role'] === 'Admin';
+            $_SESSION['email_verified'] = (int)($user['email_verified'] ?? 1) === 1;
             $_SESSION['locale'] = $user['locale'] ?? 'en';
             $_SESSION['theme'] = $user['theme'] ?? 'light';
             $_SESSION['avatar'] = $user['avatar'] ?? '';
@@ -33,6 +52,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = t('error_occurred');
     }
 }
+
+render_login:
 ?>
 <!DOCTYPE html>
 <html lang="<?= e($locale ?? 'en') ?>" data-bs-theme="light">

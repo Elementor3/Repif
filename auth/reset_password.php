@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/i18n.php';
+require_once __DIR__ . '/../includes/mailer.php';
 require_once __DIR__ . '/../services/users.php';
 
 if (isLoggedIn()) { header('Location: /user/dashboard.php'); exit; }
@@ -36,6 +37,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $validToken) {
         $upd = $conn->prepare("UPDATE password_reset SET used=1 WHERE token=?");
         $upd->bind_param("s", $token);
         $upd->execute();
+        $user = getUserByUsername($conn, $resetUser);
+        if ($user && !empty($user['email'])) {
+            sendEmail($user['email'], t('password_changed_subject'), '<p>' . t('password_changed_message') . '</p>');
+        }
         $success = t('password_reset_success');
     }
 }

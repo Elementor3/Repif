@@ -20,7 +20,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->execute();
             $baseUrl = defined('APP_URL') ? APP_URL : 'http://localhost';
             $resetLink = $baseUrl . '/auth/reset_password.php?token=' . $token;
-            sendEmail($email, 'Reset your password', '<p>Click <a href="' . htmlspecialchars($resetLink) . '">here</a> to reset your password. Link expires in 1 hour.</p>');
+            $resetBody = '<p>' . t('reset_email_message') . '</p>'
+                . '<p><a href="' . htmlspecialchars($resetLink, ENT_QUOTES, 'UTF-8') . '">' . t('reset_email_button') . '</a></p>'
+                . '<p><small>' . t('reset_email_expire_hint') . '</small></p>';
+            sendEmail($email, t('reset_email_subject'), $resetBody);
         }
     }
     $info = t('reset_link_sent');
