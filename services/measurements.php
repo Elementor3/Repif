@@ -84,6 +84,14 @@ function getChartData(mysqli $conn, array $filters): array {
         $chartLimit = 1000;
     }
 
+    $allowedMetrics = ['temperature', 'airPressure', 'lightIntensity', 'airQuality'];
+    $metric = $filters['metric'] ?? '';
+    $metric = in_array($metric, $allowedMetrics, true) ? $metric : '';
+
+    $metricSelect = $metric
+        ? "m.$metric AS metric_value"
+        : "m.temperature, m.airPressure, m.lightIntensity, m.airQuality";
+
     // Take newest points first for responsiveness, then sort ascending for chart rendering.
     $sql = "SELECT recent.*
             FROM (
@@ -91,10 +99,7 @@ function getChartData(mysqli $conn, array $filters): array {
                        m.timestamp,
                        m.fk_station,
                        COALESCE(s.name, m.fk_station) AS station_name,
-                       m.temperature,
-                       m.airPressure,
-                       m.lightIntensity,
-                       m.airQuality
+                       $metricSelect
                 FROM measurement m
                 LEFT JOIN station s ON s.pk_serialNumber = m.fk_station
                 $where
@@ -112,14 +117,23 @@ function getChartData(mysqli $conn, array $filters): array {
 
 function exportCsv(mysqli $conn, array $filters): string {
     [$where, $types, $params] = buildMeasurementWhere($filters);
-    $sql = "SELECT m.pk_measurementID, m.timestamp, m.temperature, m.humidity, m.airPressure, m.lightIntensity, m.airQuality, m.fk_station, s.name AS station_name FROM measurement m LEFT JOIN station s ON m.fk_station = s.pk_serialNumber $where ORDER BY m.timestamp DESC";
+    $sql = "SELECT m.timestamp,
+                   COALESCE(s.name, m.fk_station) AS station,
+                   m.temperature,
+                   m.airPressure,
+                   m.lightIntensity,
+                   m.airQuality
+            FROM measurement m
+            LEFT JOIN station s ON m.fk_station = s.pk_serialNumber
+            $where
+            ORDER BY m.timestamp DESC";
     $stmt = $conn->prepare($sql);
     if ($types && $params) {
         $stmt->bind_param($types, ...$params);
     }
     $stmt->execute();
     $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-    $csv = "ID,Timestamp,Temperature,Humidity,AirPressure,LightIntensity,AirQuality,Station,StationName\n";
+    $csv = "Timestamp,Station,Temperature,Air Pressure,Light Intensity,Air Quality\n";
     foreach ($rows as $row) {
         $csv .= implode(',', array_map(fn($v) => '"' . str_replace('"', '""', (string)$v) . '"', $row)) . "\n";
     }

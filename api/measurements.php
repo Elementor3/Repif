@@ -39,9 +39,18 @@ if ($action === 'chart' || $action === 'poll') {
     }
 
     if ($action === 'chart') {
-        $filters['chart_limit'] = (int)($_GET['chart_limit'] ?? 300);
+        $metric = $_GET['metric'] ?? '';
+        if (!in_array($metric, ['temperature', 'airPressure', 'lightIntensity', 'airQuality'], true)) {
+            $metric = '';
+        }
+
+        if ($metric !== '') {
+            $filters['metric'] = $metric;
+        }
+
+        $filters['chart_limit'] = (int)($_GET['chart_limit'] ?? 120);
         $data = getChartData($conn, $filters);
-        echo json_encode(['success' => true, 'data' => $data]);
+        echo json_encode(['success' => true, 'data' => $data, 'metric' => $metric]);
         exit;
     }
 

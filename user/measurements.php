@@ -35,11 +35,78 @@ if ($filters['collection'] !== '') {
 
 $filtersWithAccess = array_merge($filters, ['allowed_stations' => $stationSerials]);
 
+function slugifyFilenamePart(string $value): string {
+    $value = trim($value);
+    if ($value === '') {
+        return '';
+    }
+
+    $translit = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $value);
+    if ($translit !== false) {
+        $value = $translit;
+    }
+
+    $value = strtolower($value);
+    $value = preg_replace('/[^a-z0-9]+/', '-', $value);
+    $value = trim((string)$value, '-');
+
+    return $value !== '' ? $value : 'value';
+}
+
+function formatDateForFilename(string $value): string {
+    $value = trim($value);
+    if ($value === '') {
+        return '';
+    }
+
+    $dt = DateTime::createFromFormat('Y-m-d', $value);
+    if (!$dt) {
+        return '';
+    }
+
+    return $dt->format('dmY');
+}
+
+function buildMeasurementsCsvFilename(array $filters, array $stations, array $collections): string {
+    $parts = ['measurements'];
+
+    if (!empty($filters['collection'])) {
+        foreach ($collections as $collection) {
+            if ((string)($collection['pk_collectionID'] ?? '') === (string)$filters['collection']) {
+                $parts[] = 'col_' . slugifyFilenamePart((string)($collection['name'] ?? $collection['pk_collectionID']));
+                break;
+            }
+        }
+    }
+
+    if (!empty($filters['station'])) {
+        foreach ($stations as $station) {
+            if ((string)($station['pk_serialNumber'] ?? '') === (string)$filters['station']) {
+                $stationName = (string)($station['name'] ?? $station['pk_serialNumber']);
+                $parts[] = 'st_' . slugifyFilenamePart($stationName);
+                break;
+            }
+        }
+    }
+
+    $dateFrom = formatDateForFilename((string)($filters['date_from'] ?? ''));
+    $dateTo = formatDateForFilename((string)($filters['date_to'] ?? ''));
+    if ($dateFrom !== '') {
+        $parts[] = 'f' . $dateFrom;
+    }
+    if ($dateTo !== '') {
+        $parts[] = 't' . $dateTo;
+    }
+
+    return implode('_', $parts) . '.csv';
+}
+
 // CSV export — must happen before any HTML output
 if (isset($_GET['export']) && $_GET['export'] === 'csv') {
     $csv = exportCsv($conn, $filtersWithAccess);
+    $csvFilename = buildMeasurementsCsvFilename($filters, $myStations, $myCollections);
     header('Content-Type: text/csv');
-    header('Content-Disposition: attachment; filename="measurements_' . date('Ymd_His') . '.csv"');
+    header('Content-Disposition: attachment; filename="' . $csvFilename . '"');
     echo $csv;
     exit;
 }
@@ -65,7 +132,7 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
 <div class="card filter-card mb-4">
     <div class="card-body">
         <form method="get" class="row g-2 align-items-end" id="measurementFiltersForm">
-            <div class="col-md-3">
+            <div class="col-12 col-sm-6 col-lg-auto">
                 <label class="form-label"><?= t('station') ?></label>
                 <select name="station" class="form-select form-select-sm">
                     <option value=""><?= t('any') ?></option>
@@ -76,7 +143,7 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="col-md-3">
+            <div class="col-12 col-sm-6 col-lg-auto">
                 <label class="form-label"><?= t('collection') ?></label>
                 <select name="collection" class="form-select form-select-sm">
                     <option value=""><?= t('any') ?></option>
@@ -87,17 +154,16 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="col-md-2">
+            <div class="col-12 col-sm-6 col-lg-auto">
                 <label class="form-label"><?= t('date_from') ?></label>
                 <input type="date" name="date_from" class="form-control form-control-sm" value="<?= e($filters['date_from']) ?>">
             </div>
-            <div class="col-md-2">
+            <div class="col-12 col-sm-6 col-lg-auto">
                 <label class="form-label"><?= t('date_to') ?></label>
                 <input type="date" name="date_to" class="form-control form-control-sm" value="<?= e($filters['date_to']) ?>">
             </div>
-            <div class="col-md-2 d-flex gap-1">
-                <button type="submit" class="btn btn-primary btn-sm"><?= t('filter') ?></button>
-                <button type="button" id="clearMeasurementFiltersBtn" class="btn btn-outline-secondary btn-sm"><?= t('cancel') ?></button>
+            <div class="col-12 col-lg-auto d-flex gap-1">
+                <button type="button" id="clearMeasurementFiltersBtn" class="btn btn-outline-secondary btn-sm"><?= t('clear') ?></button>
             </div>
         </form>
     </div>
@@ -118,17 +184,18 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
 
 <div class="tab-content" id="measurementTabContent">
     <div class="tab-pane fade show active" id="measurementsDataPane" role="tabpanel" aria-labelledby="measurements-data-tab" tabindex="0">
-        <div class="d-flex justify-content-between align-items-center mb-3" id="dataActionsRow">
-            <span class="pagination-info" id="paginationInfoText"><?= $paginationInfo ?></span>
-            <div class="d-flex gap-2 align-items-center">
+        <div class="d-flex flex-column flex-sm-row justify-content-between align-items-stretch align-items-sm-center mb-3 gap-2" id="dataActionsRow">
+            <span class="pagination-info text-nowrap" id="paginationInfoText"><?= $paginationInfo ?></span>
+            <div class="d-flex flex-wrap gap-2 align-items-center" id="dataActionsControls">
                 <label for="dataPerPageSelect" class="form-label mb-0 small"><?= t('per_page') ?></label>
                 <select id="dataPerPageSelect" class="form-select form-select-sm" style="width: auto;">
                     <?php foreach ([10, 20, 50, 100] as $pp): ?>
                     <option value="<?= $pp ?>" <?= $perPage === $pp ? 'selected' : '' ?>><?= $pp ?></option>
                     <?php endforeach; ?>
                 </select>
-                <button type="button" class="btn btn-sm btn-outline-primary" id="selectAllMeasurementsBtn"><?= t('select_all') ?></button>
-                <button type="button" class="btn btn-sm btn-outline-danger" id="deleteSelectedMeasurementsBtn" disabled><?= t('delete_selected') ?></button>
+                <a id="dataExportCsvBtn" href="?<?= http_build_query(array_merge($filters, ['export' => 'csv'])) ?>" class="btn btn-sm btn-outline-secondary text-nowrap">
+                    <i class="bi bi-download me-1"></i><?= t('export_csv') ?>
+                </a>
             </div>
         </div>
 
@@ -138,11 +205,14 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
             <div class="alert alert-info d-none" id="noMeasurementsAlert"><?= t('no_measurements') ?></div>
         <?php endif; ?>
 
+        <div class="alert alert-secondary py-2 px-3 small d-sm-none <?= empty($measurements) ? 'd-none' : '' ?>" id="measurementsScrollHint" role="status">
+            <i class="bi bi-arrow-left-right me-1"></i><?= t('table_horizontal_scroll_hint') ?>
+        </div>
+
         <div class="table-responsive <?= empty($measurements) ? 'd-none' : '' ?>" id="measurementsTableWrap">
-            <table class="table table-sm table-hover align-middle" id="measurementsTable">
+            <table class="table table-sm table-hover align-middle text-center text-nowrap table-striped" id="measurementsTable">
                 <thead>
                     <tr>
-                        <th style="width: 36px;"></th>
                         <th><?= t('timestamp') ?></th>
                         <th><?= t('station') ?></th>
                         <th><?= t('temperature') ?></th>
@@ -153,14 +223,13 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
                 </thead>
                 <tbody id="measurementsTableBody">
                 <?php foreach ($measurements as $m): ?>
-                <tr data-measurement-id="<?= (int)$m['pk_measurementID'] ?>">
-                    <td><input type="checkbox" class="measurement-checkbox" value="<?= (int)$m['pk_measurementID'] ?>"></td>
+                <tr>
                     <td><?= formatDateTime($m['timestamp']) ?></td>
                     <td><?= e($m['station_name'] ?? $m['fk_station']) ?></td>
                     <td><?= $m['temperature'] !== null ? e($m['temperature']) . '°C' : '-' ?></td>
                     <td><?= $m['airPressure'] !== null ? e($m['airPressure']) . ' hPa' : '-' ?></td>
                     <td><?= $m['lightIntensity'] !== null ? e($m['lightIntensity']) . ' lux' : '-' ?></td>
-                    <td><?= $m['airQuality'] !== null ? e($m['airQuality']) : '-' ?></td>
+                    <td><?= $m['airQuality'] !== null ? e($m['airQuality']) . ' ppm' : '-' ?></td>
                 </tr>
                 <?php endforeach; ?>
                 </tbody>
@@ -185,76 +254,75 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
     </div>
 
     <div class="tab-pane fade" id="measurementsChartsPane" role="tabpanel" aria-labelledby="measurements-charts-tab" tabindex="0">
-        <div class="d-flex justify-content-end align-items-center mb-3">
-            <a id="chartExportCsvBtn" href="?<?= http_build_query(array_merge($filters, ['export' => 'csv'])) ?>" class="btn btn-sm btn-outline-secondary">
-                <i class="bi bi-download me-1"></i><?= t('export_csv') ?>
-            </a>
+        <div class="d-flex flex-column gap-2 mb-3">
+            <div class="row row-cols-2 row-cols-sm-4 g-2" id="chartMetricButtons">
+                <div class="col"><button type="button" class="btn btn-sm btn-outline-primary active w-100" data-metric="temperature"><?= t('temperature') ?></button></div>
+                <div class="col"><button type="button" class="btn btn-sm btn-outline-primary w-100" data-metric="airPressure"><?= t('air_pressure') ?></button></div>
+                <div class="col"><button type="button" class="btn btn-sm btn-outline-primary w-100" data-metric="lightIntensity"><?= t('light_intensity') ?></button></div>
+                <div class="col"><button type="button" class="btn btn-sm btn-outline-primary w-100" data-metric="airQuality"><?= t('air_quality') ?> (ppm)</button></div>
+            </div>
+            <div class="row row-cols-2 g-2" id="chartDownloadButtons">
+                <div class="col">
+                    <button type="button" id="downloadCurrentChartBtn" class="btn btn-sm btn-outline-secondary w-100 h-100 text-nowrap">
+                        <i class="bi bi-image me-1"></i><?= t('download_chart') ?> PNG
+                    </button>
+                </div>
+                <div class="col">
+                    <a id="chartExportCsvBtn" href="?<?= http_build_query(array_merge($filters, ['export' => 'csv'])) ?>" class="btn btn-sm btn-outline-secondary w-100 h-100 text-nowrap">
+                        <i class="bi bi-download me-1"></i><?= t('export_csv') ?>
+                    </a>
+                </div>
+            </div>
         </div>
-        <div class="row g-3">
-            <div class="col-12 col-lg-6">
-                <div class="card h-100">
-                    <div class="card-header"><?= t('temperature') ?></div>
-                    <div class="card-body" style="height:260px;"><canvas id="temperatureChartCanvas"></canvas></div>
-                </div>
-            </div>
-            <div class="col-12 col-lg-6">
-                <div class="card h-100">
-                    <div class="card-header"><?= t('air_pressure') ?></div>
-                    <div class="card-body" style="height:260px;"><canvas id="airPressureChartCanvas"></canvas></div>
-                </div>
-            </div>
-            <div class="col-12 col-lg-6">
-                <div class="card h-100">
-                    <div class="card-header"><?= t('light_intensity') ?></div>
-                    <div class="card-body" style="height:260px;"><canvas id="lightIntensityChartCanvas"></canvas></div>
-                </div>
-            </div>
-            <div class="col-12 col-lg-6">
-                <div class="card h-100">
-                    <div class="card-header"><?= t('air_quality') ?></div>
-                    <div class="card-body" style="height:260px;"><canvas id="airQualityChartCanvas"></canvas></div>
-                </div>
-            </div>
+        <div class="card">
+            <div class="card-header" id="activeChartTitle"><?= t('temperature') ?></div>
+            <div class="card-body" style="height:360px;"><canvas id="measurementMetricChartCanvas"></canvas></div>
         </div>
     </div>
 </div>
 
 <script>
 (function () {
-    var selectedIds = new Set();
     var currentPage = <?= (int)$page ?>;
     var perPage = <?= (int)$perPage ?>;
     var pollTimer = null;
-    var chartInstances = {
-        temperature: null,
-        airPressure: null,
-        lightIntensity: null,
-        airQuality: null
-    };
+    var chartInstance = null;
+    var selectedChartMetric = 'temperature';
     var paginationTemplate = <?= json_encode(t('pagination_info')) ?>;
     var noDataText = <?= json_encode(t('no_measurements')) ?>;
-    var confirmDeleteText = <?= json_encode(t('confirm_delete_selected')) ?>;
-    var lastChartRows = [];
-    var chartRequestId = 0;
+    var chartDataCache = {
+        temperature: [],
+        airPressure: [],
+        lightIntensity: [],
+        airQuality: []
+    };
+    var isChartLoading = false;
+    var pendingChartReload = false;
+    var chartDataLoaded = {
+        temperature: false,
+        airPressure: false,
+        lightIntensity: false,
+        airQuality: false
+    };
     var chartConfigMap = {
         temperature: {
-            canvasId: 'temperatureChartCanvas',
+            label: <?= json_encode(t('temperature')) ?>,
             yTitle: <?= json_encode(t('temperature')) ?>,
             metricKey: 'temperature'
         },
         airPressure: {
-            canvasId: 'airPressureChartCanvas',
+            label: <?= json_encode(t('air_pressure')) ?>,
             yTitle: <?= json_encode(t('air_pressure')) ?>,
             metricKey: 'airPressure'
         },
         lightIntensity: {
-            canvasId: 'lightIntensityChartCanvas',
+            label: <?= json_encode(t('light_intensity')) ?>,
             yTitle: <?= json_encode(t('light_intensity')) ?>,
             metricKey: 'lightIntensity'
         },
         airQuality: {
-            canvasId: 'airQualityChartCanvas',
-            yTitle: <?= json_encode(t('air_quality')) ?>,
+            label: <?= json_encode(t('air_quality') . ' (ppm)') ?>,
+            yTitle: <?= json_encode(t('air_quality') . ' (ppm)') ?>,
             metricKey: 'airQuality'
         }
     };
@@ -268,31 +336,6 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
         });
         if (!response.ok) {
             throw new Error('GET ' + url + ' failed: ' + response.status);
-        }
-        return response.json();
-    }
-
-    async function postJson(url, payload) {
-        var formData = new FormData();
-        Object.keys(payload).forEach(function (key) {
-            var value = payload[key];
-            if (Array.isArray(value)) {
-                value.forEach(function (item) {
-                    formData.append(key + '[]', item);
-                });
-                return;
-            }
-            formData.append(key, value);
-        });
-
-        var response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Accept': 'application/json' },
-            credentials: 'same-origin',
-            body: formData
-        });
-        if (!response.ok) {
-            throw new Error('POST ' + url + ' failed: ' + response.status);
         }
         return response.json();
     }
@@ -313,9 +356,76 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
         return dt.toLocaleString();
     }
 
+    function pad2(value) {
+        return String(value).padStart(2, '0');
+    }
+
     function formatChartTimestamp(value) {
         if (!value) return '';
-        return String(value).replace('T', ' ');
+        var raw = String(value).trim();
+        var parsed = new Date(raw.replace(' ', 'T'));
+
+        if (!isNaN(parsed.getTime())) {
+            return pad2(parsed.getDate()) + '.' + pad2(parsed.getMonth() + 1) + '.' + parsed.getFullYear()
+                + ' ' + pad2(parsed.getHours()) + ':' + pad2(parsed.getMinutes());
+        }
+
+        var m = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::\d{2})?)?$/);
+        if (m) {
+            return m[3] + '.' + m[2] + '.' + m[1] + (m[4] ? (' ' + m[4] + ':' + m[5]) : '');
+        }
+
+        return raw;
+    }
+
+    function sanitizeFilePart(value) {
+        return String(value || '')
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '') || 'value';
+    }
+
+    function formatDateInputForFilename(value) {
+        var m = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        return m ? (m[3] + m[2] + m[1]) : '';
+    }
+
+    function getSelectedFilterLabel(fieldName) {
+        var field = document.querySelector('#measurementFiltersForm [name="' + fieldName + '"]');
+        if (!field || !field.value) {
+            return '';
+        }
+
+        var option = field.options[field.selectedIndex];
+        return option ? option.text.trim() : '';
+    }
+
+    function buildFilenameFilterSuffix() {
+        var parts = [];
+        var collectionLabel = getSelectedFilterLabel('collection');
+        var stationLabel = getSelectedFilterLabel('station');
+
+        if (collectionLabel) {
+            parts.push('col_' + sanitizeFilePart(collectionLabel));
+        }
+        if (stationLabel) {
+            parts.push('st_' + sanitizeFilePart(stationLabel));
+        }
+
+        var dateFromField = document.querySelector('#measurementFiltersForm [name="date_from"]');
+        var dateToField = document.querySelector('#measurementFiltersForm [name="date_to"]');
+        var from = formatDateInputForFilename(dateFromField ? dateFromField.value : '');
+        var to = formatDateInputForFilename(dateToField ? dateToField.value : '');
+
+        if (from) {
+            parts.push('f' + from);
+        }
+        if (to) {
+            parts.push('t' + to);
+        }
+
+        return parts.length ? ('_' + parts.join('_')) : '';
     }
 
     function formatPaginationInfo(pagination) {
@@ -350,31 +460,49 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
     }
 
     function updateExportLink() {
-        var exportLink = document.getElementById('chartExportCsvBtn');
-        if (!exportLink) {
-            return;
-        }
-
         var params = getFilterParams();
         params.set('export', 'csv');
-        exportLink.setAttribute('href', '?' + params.toString());
+        var href = '?' + params.toString();
+
+        ['chartExportCsvBtn', 'dataExportCsvBtn'].forEach(function (id) {
+            var exportLink = document.getElementById(id);
+            if (exportLink) {
+                exportLink.setAttribute('href', href);
+            }
+        });
     }
 
-    function updateDeleteButtonState() {
-        var btn = document.getElementById('deleteSelectedMeasurementsBtn');
-        btn.disabled = selectedIds.size === 0;
+    function getDefaultMetricKey() {
+        var keys = Object.keys(chartConfigMap);
+        return keys.length ? keys[0] : 'temperature';
+    }
+
+    function ensureSelectedMetric() {
+        if (!chartConfigMap[selectedChartMetric]) {
+            selectedChartMetric = getDefaultMetricKey();
+        }
+        updateActiveMetricButtons();
+    }
+
+    function updateActiveMetricButtons() {
+        var buttons = document.querySelectorAll('#chartMetricButtons [data-metric]');
+        buttons.forEach(function (btn) {
+            if (btn.getAttribute('data-metric') === selectedChartMetric) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
     }
 
     function buildRowHtml(row) {
         var temperature = row.temperature !== null ? escapeHtml(row.temperature) + '°C' : '-';
         var pressure = row.airPressure !== null ? escapeHtml(row.airPressure) + ' hPa' : '-';
         var light = row.lightIntensity !== null ? escapeHtml(row.lightIntensity) + ' lux' : '-';
-        var airQuality = row.airQuality !== null ? escapeHtml(row.airQuality) : '-';
+        var airQuality = row.airQuality !== null ? escapeHtml(row.airQuality) + ' ppm' : '-';
         var stationName = escapeHtml(row.station_name || row.fk_station);
-        var checked = selectedIds.has(String(row.pk_measurementID)) ? ' checked' : '';
 
-        return '<tr data-measurement-id="' + row.pk_measurementID + '">' +
-            '<td><input type="checkbox" class="measurement-checkbox" value="' + row.pk_measurementID + '"' + checked + '></td>' +
+        return '<tr>' +
             '<td>' + escapeHtml(formatDateTime(row.timestamp)) + '</td>' +
             '<td>' + stationName + '</td>' +
             '<td>' + temperature + '</td>' +
@@ -388,28 +516,25 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
         var tbody = document.getElementById('measurementsTableBody');
         var tableWrap = document.getElementById('measurementsTableWrap');
         var emptyAlert = document.getElementById('noMeasurementsAlert');
+        var scrollHint = document.getElementById('measurementsScrollHint');
 
         if (!rows.length) {
             tbody.innerHTML = '';
             tableWrap.classList.add('d-none');
             emptyAlert.classList.remove('d-none');
             emptyAlert.textContent = noDataText;
-            selectedIds.clear();
-            updateDeleteButtonState();
+            if (scrollHint) {
+                scrollHint.classList.add('d-none');
+            }
             return;
         }
-
-        var visibleIds = rows.map(function (r) { return String(r.pk_measurementID); });
-        selectedIds.forEach(function (id) {
-            if (visibleIds.indexOf(id) === -1) {
-                selectedIds.delete(id);
-            }
-        });
 
         tbody.innerHTML = rows.map(buildRowHtml).join('');
         tableWrap.classList.remove('d-none');
         emptyAlert.classList.add('d-none');
-        updateDeleteButtonState();
+        if (scrollHint) {
+            scrollHint.classList.remove('d-none');
+        }
     }
 
     function buildPaginationLink(page) {
@@ -441,18 +566,28 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
         list.innerHTML = html;
     }
 
-    function hashString(str) {
-        var hash = 0;
-        for (var i = 0; i < str.length; i++) {
-            hash = ((hash << 5) - hash) + str.charCodeAt(i);
-            hash |= 0;
-        }
-        return Math.abs(hash);
-    }
+    function getSeriesColorByIndex(index, alpha) {
+        var vividPalette = [
+            '255, 59, 48',   // red
+            '0, 122, 255',   // blue
+            '52, 199, 89',   // green
+            '255, 149, 0',   // orange
+            '175, 82, 222',  // violet
+            '0, 199, 190',   // teal
+            '255, 45, 85',   // pink
+            '88, 86, 214',   // indigo
+            '255, 204, 0',   // yellow
+            '90, 200, 250',  // light blue
+            '48, 209, 88',   // bright green
+            '255, 105, 180'  // hot pink
+        ];
 
-    function getStationColor(stationKey, alpha) {
-        var hue = hashString(stationKey) % 360;
-        return 'hsla(' + hue + ', 75%, 45%, ' + alpha + ')';
+        if (index < vividPalette.length) {
+            return 'rgba(' + vividPalette[index] + ', ' + alpha + ')';
+        }
+
+        var hue = (index * 137.508) % 360;
+        return 'hsla(' + hue + ', 85%, 45%, ' + alpha + ')';
     }
 
     function isChartsTabActive() {
@@ -460,22 +595,22 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
         return !!(chartsPane && chartsPane.classList.contains('active') && chartsPane.classList.contains('show'));
     }
 
-    function ensureChartInstance(key, config) {
+    function ensureChartInstance() {
         if (typeof Chart === 'undefined') {
             return null;
         }
 
-        if (chartInstances[key]) {
-            return chartInstances[key];
+        if (chartInstance) {
+            return chartInstance;
         }
 
-        var canvas = document.getElementById(config.canvasId);
+        var canvas = document.getElementById('measurementMetricChartCanvas');
         if (!canvas) {
             return null;
         }
 
         var ctx = canvas.getContext('2d');
-        chartInstances[key] = new Chart(ctx, {
+        chartInstance = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: [],
@@ -511,14 +646,14 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
                     y: {
                         title: {
                             display: true,
-                            text: config.yTitle
+                            text: ''
                         }
                     }
                 }
             }
         });
 
-        return chartInstances[key];
+        return chartInstance;
     }
 
     function buildSeriesByStation(chartRows, metricKey) {
@@ -556,7 +691,7 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
                 }
             }
 
-            var val = row[metricKey];
+            var val = row.metric_value !== undefined ? row.metric_value : row[metricKey];
             stationMap[stationKey][idx] = (val !== null && val !== '') ? parseFloat(val) : null;
         });
 
@@ -568,12 +703,12 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
             }
         });
 
-        var datasets = stationOrder.map(function (stationKey) {
+        var datasets = stationOrder.map(function (stationKey, idx) {
             return {
                 label: stationNameMap[stationKey] || stationKey,
                 data: stationMap[stationKey],
-                borderColor: getStationColor(stationKey, 1),
-                backgroundColor: getStationColor(stationKey, 0.18),
+            borderColor: getSeriesColorByIndex(idx, 1),
+            backgroundColor: getSeriesColorByIndex(idx, 0.18),
                 borderWidth: 2,
                 pointRadius: 0,
                 pointHoverRadius: 3,
@@ -589,65 +724,85 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
         };
     }
 
-    function renderCharts(chartRows) {
+    function renderChart(metricKey, chartRows) {
         if (typeof Chart === 'undefined') {
             return;
         }
 
-        Object.keys(chartConfigMap).forEach(function (key) {
-            var chartConfig = chartConfigMap[key];
-            var chart = ensureChartInstance(key, chartConfig);
-            if (!chart) {
-                return;
-            }
+        var chartConfig = chartConfigMap[metricKey];
+        if (!chartConfig) {
+            return;
+        }
 
-            var series = buildSeriesByStation(chartRows, chartConfig.metricKey);
-            chart.data.labels = series.labels;
-            chart.data.datasets = series.datasets;
-            chart.update('none');
-        });
+        var chart = ensureChartInstance();
+        if (!chart) {
+            return;
+        }
+
+        var series = buildSeriesByStation(chartRows, chartConfig.metricKey);
+        chart.data.labels = series.labels;
+        chart.data.datasets = series.datasets;
+        chart.options.scales.y.title.text = chartConfig.yTitle;
+        chart.update('none');
+
+        var titleEl = document.getElementById('activeChartTitle');
+        if (titleEl) {
+            titleEl.textContent = chartConfig.label;
+        }
     }
 
-    async function loadChartData() {
-        var thisRequestId = ++chartRequestId;
+    async function loadChartData(forceReload) {
+        var mustReload = !!forceReload;
+
+        if (!mustReload && chartDataLoaded[selectedChartMetric]) {
+            refreshChartsIfVisible();
+            return;
+        }
+
+        if (isChartLoading) {
+            pendingChartReload = true;
+            return;
+        }
+
+        isChartLoading = true;
         var params = getFilterParams();
         params.set('action', 'chart');
-        params.set('chart_limit', '200');
+        params.set('metric', selectedChartMetric);
+        params.set('chart_limit', '120');
         params.set('_ts', Date.now());
 
         try {
             var res = await getJson('/api/measurements.php?' + params.toString());
-            if (thisRequestId !== chartRequestId) {
-                return;
-            }
             if (!res || !res.success) {
                 return;
             }
 
-            lastChartRows = Array.isArray(res.data) ? res.data : [];
+            var metricKey = res.metric || selectedChartMetric;
+            chartDataCache[metricKey] = Array.isArray(res.data) ? res.data : [];
+            chartDataLoaded[metricKey] = true;
             if (isChartsTabActive()) {
-                renderCharts(lastChartRows);
-                Object.keys(chartInstances).forEach(function (key) {
-                    if (chartInstances[key]) {
-                        chartInstances[key].resize();
-                        chartInstances[key].update('none');
-                    }
+                requestAnimationFrame(function () {
+                    refreshChartsIfVisible();
                 });
             }
         } catch (err) {
             console.error('Loading chart data failed', err);
+        } finally {
+            isChartLoading = false;
+            if (pendingChartReload) {
+                pendingChartReload = false;
+                loadChartData(true);
+            }
         }
     }
 
     function refreshChartsIfVisible() {
         if (isChartsTabActive()) {
-            renderCharts(lastChartRows);
-            Object.keys(chartInstances).forEach(function (key) {
-                if (chartInstances[key]) {
-                    chartInstances[key].resize();
-                    chartInstances[key].update('none');
-                }
-            });
+            renderChart(selectedChartMetric, chartDataCache[selectedChartMetric] || []);
+            if (chartInstance) {
+                chartInstance.resize();
+                chartInstance.update('none');
+            }
         }
     }
 
@@ -677,66 +832,24 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
 
     function applyFiltersWithoutReload() {
         currentPage = 1;
-        selectedIds.clear();
-        updateDeleteButtonState();
+        chartDataLoaded = {
+            temperature: false,
+            airPressure: false,
+            lightIntensity: false,
+            airQuality: false
+        };
+        chartDataCache = {
+            temperature: [],
+            airPressure: [],
+            lightIntensity: [],
+            airQuality: []
+        };
+        pendingChartReload = false;
         pollMeasurements();
-        loadChartData();
+        if (isChartsTabActive()) {
+            loadChartData(true);
+        }
     }
-
-    document.addEventListener('change', function (e) {
-        if (e.target && e.target.classList.contains('measurement-checkbox')) {
-            var id = String(e.target.value);
-            if (e.target.checked) {
-                selectedIds.add(id);
-            } else {
-                selectedIds.delete(id);
-            }
-            updateDeleteButtonState();
-        }
-    });
-
-    document.getElementById('selectAllMeasurementsBtn').addEventListener('click', function () {
-        var checkboxes = Array.from(document.querySelectorAll('.measurement-checkbox'));
-        if (!checkboxes.length) {
-            return;
-        }
-
-        var shouldSelectAll = checkboxes.some(function (cb) { return !cb.checked; });
-        checkboxes.forEach(function (cb) {
-            cb.checked = shouldSelectAll;
-            var id = String(cb.value);
-            if (shouldSelectAll) {
-                selectedIds.add(id);
-            } else {
-                selectedIds.delete(id);
-            }
-        });
-
-        updateDeleteButtonState();
-    });
-
-    document.getElementById('deleteSelectedMeasurementsBtn').addEventListener('click', async function () {
-        if (!selectedIds.size) {
-            return;
-        }
-        if (!confirm(confirmDeleteText)) {
-            return;
-        }
-
-        try {
-            var res = await postJson('/api/measurements.php', {
-                action: 'delete_selected',
-                ids: Array.from(selectedIds)
-            });
-            if (res && res.success) {
-                selectedIds.clear();
-                updateDeleteButtonState();
-                pollMeasurements();
-            }
-        } catch (err) {
-            console.error('Delete selected failed', err);
-        }
-    });
 
     document.addEventListener('click', function (e) {
         var link = e.target.closest('.measurement-page-link');
@@ -772,7 +885,25 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
             if (!form) {
                 return;
             }
-            form.reset();
+
+            var stationField = form.querySelector('[name="station"]');
+            var collectionField = form.querySelector('[name="collection"]');
+            var dateFromField = form.querySelector('[name="date_from"]');
+            var dateToField = form.querySelector('[name="date_to"]');
+
+            if (stationField) {
+                stationField.value = '';
+            }
+            if (collectionField) {
+                collectionField.value = '';
+            }
+            if (dateFromField) {
+                dateFromField.value = '';
+            }
+            if (dateToField) {
+                dateToField.value = '';
+            }
+
             applyFiltersWithoutReload();
         });
     }
@@ -782,34 +913,117 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
         dataPerPageSelect.addEventListener('change', function () {
             perPage = parseInt(dataPerPageSelect.value, 10) || 20;
             currentPage = 1;
-            selectedIds.clear();
-            updateDeleteButtonState();
             pollMeasurements();
         });
     }
 
-    pollMeasurements();
-    loadChartData();
+    var downloadCurrentChartBtn = document.getElementById('downloadCurrentChartBtn');
+    if (downloadCurrentChartBtn) {
+        downloadCurrentChartBtn.addEventListener('click', function () {
+            var chart = ensureChartInstance();
+            if (!chart) {
+                return;
+            }
+
+            if (isChartsTabActive()) {
+                refreshChartsIfVisible();
+            }
+
+            var canvas = document.getElementById('measurementMetricChartCanvas');
+            if (!canvas) {
+                return;
+            }
+
+            var link = document.createElement('a');
+            var metricPart = sanitizeFilePart(selectedChartMetric);
+            var filterSuffix = buildFilenameFilterSuffix();
+
+            link.download = 'chart_' + metricPart + filterSuffix + '.png';
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        });
+    }
+
+    var chartMetricButtons = document.getElementById('chartMetricButtons');
+    if (chartMetricButtons) {
+        chartMetricButtons.addEventListener('click', function (e) {
+            var btn = e.target.closest('[data-metric]');
+            if (!btn) {
+                return;
+            }
+
+            var nextMetric = btn.getAttribute('data-metric');
+            if (!chartConfigMap[nextMetric]) {
+                return;
+            }
+
+            selectedChartMetric = nextMetric;
+            ensureSelectedMetric();
+
+            if (!isChartsTabActive()) {
+                return;
+            }
+
+            if (chartDataLoaded[selectedChartMetric]) {
+                refreshChartsIfVisible();
+            } else {
+                loadChartData(true);
+            }
+        });
+    }
+
+    // Table is already server-rendered on first load, so skip immediate poll request.
+    ensureSelectedMetric();
+    if (isChartsTabActive()) {
+        ensureChartInstance();
+        loadChartData(true);
+    }
     pollTimer = setInterval(pollMeasurements, 10000);
     var chartPollTimer = setInterval(function () {
         if (isChartsTabActive()) {
-            loadChartData();
+            loadChartData(true);
         }
     }, 10000);
 
     var chartsTabBtn = document.getElementById('measurements-charts-tab');
     if (chartsTabBtn) {
-        chartsTabBtn.addEventListener('shown.bs.tab', function () {
-            if (!lastChartRows.length) {
-                loadChartData();
+        chartsTabBtn.addEventListener('click', function () {
+            ensureSelectedMetric();
+            ensureChartInstance();
+
+            if (!chartDataLoaded[selectedChartMetric]) {
+                // Start data fetch before the tab transition completes.
+                loadChartData(true);
             }
-            refreshChartsIfVisible();
+        });
+
+        chartsTabBtn.addEventListener('shown.bs.tab', function () {
+            ensureSelectedMetric();
+
+            if (chartInstance) {
+                chartInstance.resize();
+            }
+
+            if (!chartDataLoaded[selectedChartMetric]) {
+                loadChartData(true);
+            } else {
+                refreshChartsIfVisible();
+            }
+
+            // Hidden-tab rendering race fallback: retry once shortly after tab is visible.
+            setTimeout(function () {
+                if (isChartsTabActive()) {
+                    if (!chartDataLoaded[selectedChartMetric]) {
+                        loadChartData(true);
+                    } else {
+                        refreshChartsIfVisible();
+                    }
+                }
+            }, 180);
         });
     }
 
     window.addEventListener('load', function () {
-        loadChartData();
-        refreshChartsIfVisible();
         updateExportLink();
         updateUrlState();
     });

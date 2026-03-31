@@ -190,15 +190,15 @@ $myFriends = getFriends($conn, $username);
             <?php else: ?>
             <div class="table-responsive">
                 <table class="table table-sm table-hover">
-                    <thead><tr><th><?= t('timestamp') ?></th><th><?= t('station') ?></th><th><?= t('temperature') ?></th><th><?= t('humidity') ?></th><th><?= t('air_pressure') ?></th></tr></thead>
+                    <thead><tr><th><?= t('timestamp') ?></th><th><?= t('station') ?></th><th><?= t('temperature') ?></th><th><?= t('air_pressure') ?></th><th><?= t('air_quality') ?></th></tr></thead>
                     <tbody>
                     <?php foreach ($collMeasurements as $m): ?>
                     <tr>
                         <td><?= formatDateTime($m['timestamp']) ?></td>
                         <td><?= e($m['station_name'] ?? $m['fk_station']) ?></td>
                         <td><?= $m['temperature'] !== null ? e($m['temperature']) . '°C' : '-' ?></td>
-                        <td><?= $m['humidity'] !== null ? e($m['humidity']) . '%' : '-' ?></td>
                         <td><?= $m['airPressure'] !== null ? e($m['airPressure']) . ' hPa' : '-' ?></td>
+                        <td><?= $m['airQuality'] !== null ? e($m['airQuality']) . ' ppm' : '-' ?></td>
                     </tr>
                     <?php endforeach; ?>
                     </tbody>

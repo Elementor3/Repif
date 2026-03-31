@@ -15,8 +15,7 @@ if (!$data) {
 
 $serial = trim($data['serial'] ?? $data['station'] ?? '');
 $temperature = isset($data['temperature']) ? (float)$data['temperature'] : null;
-$humidity = isset($data['humidity']) ? (float)$data['humidity'] : null;
-$airPressureRaw = $data['airPressure'] ?? $data['air_pressure'] ?? null;
+ $airPressureRaw = $data['airPressure'] ?? $data['air_pressure'] ?? null;
 $airPressure = $airPressureRaw !== null ? (float)$airPressureRaw : null;
 $lightIntensityRaw = $data['lightIntensity'] ?? $data['light_intensity'] ?? null;
 $lightIntensity = $lightIntensityRaw !== null ? (float)$lightIntensityRaw : null;
@@ -40,8 +39,8 @@ if ($stmt->get_result()->num_rows === 0) {
 }
 
 // Insert measurement
-$stmt = $conn->prepare("INSERT INTO measurement (fk_station, temperature, humidity, airPressure, lightIntensity, airQuality, timestamp) VALUES (?,?,?,?,?,?,?)");
-$stmt->bind_param("sddddss", $serial, $temperature, $humidity, $airPressure, $lightIntensity, $airQuality, $timestamp);
+$stmt = $conn->prepare("INSERT INTO measurement (fk_station, temperature, airPressure, lightIntensity, airQuality, timestamp) VALUES (?,?,?,?,?,?)");
+$stmt->bind_param("sdddss", $serial, $temperature, $airPressure, $lightIntensity, $airQuality, $timestamp);
 
 if ($stmt->execute()) {
     $measurementId = $conn->insert_id;

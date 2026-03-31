@@ -340,6 +340,56 @@ body {
 
 /* Responsive chat */
 @media (max-width: 576px) {
+    #measurementFiltersForm .form-label {
+        font-size: 0.8rem;
+    }
+
+    #dataActionsRow {
+        font-size: 0.8rem;
+    }
+
+    #dataActionsControls .form-label,
+    #dataActionsControls .form-select,
+    #dataActionsControls .btn {
+        font-size: 0.75rem;
+    }
+
+    #dataActionsControls .btn {
+        padding: 0.2rem 0.45rem;
+    }
+
+    #measurementsTableWrap {
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    #measurementsTable {
+        font-size: 0.75rem;
+        min-width: 720px;
+    }
+
+    #measurementsTable th,
+    #measurementsTable td {
+        padding: 0.3rem 0.35rem;
+    }
+
+    #chartMetricButtons .col {
+        display: flex;
+    }
+
+    #chartMetricButtons .btn {
+        white-space: normal;
+        line-height: 1.15;
+        min-height: 3rem;
+        font-size: 0.75rem;
+    }
+
+    #chartDownloadButtons .btn {
+        min-height: 2.5rem;
+        font-size: 0.75rem;
+    }
+
     .chat-sidebar {
         width: 200px;
     }
