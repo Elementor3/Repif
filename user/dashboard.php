@@ -82,10 +82,6 @@ require_once __DIR__ . '/../includes/header.php';
                         <div class="sensor-label"><?= t('temperature') ?></div>
                     </div>
                     <div class="col-6">
-                        <div class="sensor-value text-primary"><?= $sd['latest']['humidity'] !== null ? e($sd['latest']['humidity']) . '%' : '-' ?></div>
-                        <div class="sensor-label"><?= t('humidity') ?></div>
-                    </div>
-                    <div class="col-6">
                         <div class="sensor-value text-success"><?= $sd['latest']['airPressure'] !== null ? e($sd['latest']['airPressure']) . ' hPa' : '-' ?></div>
                         <div class="sensor-label"><?= t('air_pressure') ?></div>
                     </div>
@@ -94,7 +90,7 @@ require_once __DIR__ . '/../includes/header.php';
                         <div class="sensor-label"><?= t('light_intensity') ?></div>
                     </div>
                     <div class="col-12">
-                        <div class="sensor-value text-info"><?= $sd['latest']['airQuality'] !== null ? e($sd['latest']['airQuality']) : '-' ?></div>
+                        <div class="sensor-value text-info"><?= $sd['latest']['airQuality'] !== null ? e($sd['latest']['airQuality']) . ' ppm' : '-' ?></div>
                         <div class="sensor-label"><?= t('air_quality') ?></div>
                     </div>
                 </div>
