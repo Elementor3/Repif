@@ -26,16 +26,18 @@ $currentPage = basename($_SERVER['PHP_SELF']);
 
 <body>
     <nav class="navbar navbar-expand-lg fixed-top navbar-themed">
-        <div class="container">
-            <a class="navbar-brand fw-bold" href="/user/dashboard.php">
-                <i class="bi bi-cloud-sun-fill text-primary"></i> WeatherStation
-            </a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarMain">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarMain">
-                <?php if (isLoggedIn()): ?>
-                    <ul class="navbar-nav me-auto">
+        <div class="container-fluid px-3 px-lg-4">
+            <?php if (isLoggedIn()): ?>
+                <a class="navbar-brand fw-semibold d-flex align-items-center text-nowrap me-1" href="/user/profile.php">
+                    <?php if (!empty($_SESSION['avatar'])): ?>
+                        <img src="/assets/avatars/presets/<?= e($_SESSION['avatar']) ?>" class="rounded-circle me-1" width="32" height="32" alt="avatar">
+                    <?php else: ?>
+                        <i class="bi bi-person-circle fs-4 me-1"></i>
+                    <?php endif; ?>
+                    <span><?= e($_SESSION['full_name'] ?? $_SESSION['username']) ?></span>
+                </a>
+                <div class="collapse navbar-collapse justify-content-center" id="navbarMain">
+                    <ul class="navbar-nav">
                         <li class="nav-item">
                             <a class="nav-link <?= $currentPage === 'dashboard.php' ? 'active' : '' ?>" href="/user/dashboard.php">
                                 <i class="bi bi-speedometer2"></i> <?= t('dashboard') ?>
@@ -73,71 +75,70 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                 </a>
                             </li>
                         <?php endif; ?>
-                    </ul>
-                    <ul class="navbar-nav align-items-center gap-2">
-                        <li class="nav-item dropdown">
-                            <a class="nav-link position-relative" href="#" id="notifDropdown" data-bs-toggle="dropdown">
-                                <i class="bi bi-bell fs-5"></i>
-                                <span class="badge bg-danger rounded-pill notif-badge position-absolute top-0 start-100 translate-middle <?= $unreadCount === 0 ? 'd-none' : '' ?>" id="notifBadge">
-                                    <?= $unreadCount ?>
-                                </span>
+                        <li class="nav-item">
+                            <a class="nav-link text-danger" href="/auth/logout.php">
+                                <i class="bi bi-box-arrow-right"></i> <?= t('logout') ?>
                             </a>
-                            <div class="dropdown-menu dropdown-menu-end notif-dropdown p-0" id="notifDropdownMenu" style="min-width:320px;max-width:360px;">
-                                <div class="d-flex justify-content-between align-items-center px-3 py-2 border-bottom">
-                                    <strong><?= t('notifications') ?></strong>
-                                    <a href="#" class="small text-muted" id="markAllReadBtn"><?= t('mark_all_read') ?></a>
-                                    <a href="#" class="small text-danger" id="clearNotifBtn"><?= t('clear_all') ?></a>
-                                </div>
-                                <div id="notifList"
-                                    data-empty-msg="<?= e(t('no_notifications')) ?>"
-                                    data-load-error-msg="<?= e(t('failed_to_load_notification')) ?>"
-                                    data-clear-error-msg="<?= e(t('failed_to_clear_notifications')) ?>"
-                                    data-delete-error-msg="<?= e(t('failed_to_delete_notification')) ?>"
-                                    style="max-height:300px;overflow-y:auto;">
-                                    <div class="text-center text-muted py-3"><?= t('no_notifications') ?></div>
-                                </div>
+                        </li>
+                    </ul>
+                </div>
+                <ul class="navbar-nav align-items-center flex-row gap-2 ms-auto ms-lg-2 text-nowrap">
+                    <li class="nav-item dropdown">
+                        <a class="nav-link position-relative" href="#" id="notifDropdown" data-bs-toggle="dropdown">
+                            <i class="bi bi-bell fs-5"></i>
+                            <span class="badge bg-danger rounded-pill notif-badge position-absolute top-0 start-100 translate-middle <?= $unreadCount === 0 ? 'd-none' : '' ?>" id="notifBadge">
+                                <?= $unreadCount ?>
+                            </span>
+                        </a>
+                        <div class="dropdown-menu dropdown-menu-end notif-dropdown p-0" id="notifDropdownMenu" style="min-width:320px;max-width:360px;">
+                            <div class="d-flex justify-content-between align-items-center px-3 py-2 border-bottom">
+                                <strong><?= t('notifications') ?></strong>
+                                <a href="#" class="small text-muted" id="markAllReadBtn"><?= t('mark_all_read') ?></a>
+                                <a href="#" class="small text-danger" id="clearNotifBtn"><?= t('clear_all') ?></a>
                             </div>
-                        </li>
-                        <li class="nav-item">
-                            <form method="post" action="/api/profile.php" class="d-inline" id="localeSwitcherForm">
-                                <input type="hidden" name="action" value="set_locale">
-                                <select name="locale" class="form-select form-select-sm" onchange="this.form.submit()" style="width:auto;">
-                                    <option value="en" <?= $locale === 'en' ? 'selected' : '' ?>>EN</option>
-                                    <option value="fr" <?= $locale === 'fr' ? 'selected' : '' ?>>FR</option>
-                                    <option value="uk" <?= $locale === 'uk' ? 'selected' : '' ?>>UK</option>
-                                </select>
-                            </form>
-                        </li>
-                        <li class="nav-item">
-                            <button class="btn btn-link nav-link" id="themeToggleBtn" title="Toggle theme">
-                                <i class="bi <?= $theme === 'dark' ? 'bi-sun-fill' : 'bi-moon-fill' ?>" id="themeIcon"></i>
-                            </button>
-                        </li>
-                        <li class="nav-item dropdown">
-                            <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">
-                                <?php if (!empty($_SESSION['avatar'])): ?>
-                                    <img src="/assets/avatars/presets/<?= e($_SESSION['avatar']) ?>" class="rounded-circle me-1" width="24" height="24" alt="avatar">
-                                <?php else: ?>
-                                    <i class="bi bi-person-circle"></i>
-                                <?php endif; ?>
-                                <?= e($_SESSION['full_name'] ?? $_SESSION['username']) ?>
-                            </a>
-                            <ul class="dropdown-menu dropdown-menu-end">
-                                <li><a class="dropdown-item" href="/user/profile.php"><i class="bi bi-person me-2"></i><?= t('profile') ?></a></li>
-                                <li>
-                                    <hr class="dropdown-divider">
-                                </li>
-                                <li><a class="dropdown-item text-danger" href="/auth/logout.php"><i class="bi bi-box-arrow-right me-2"></i><?= t('logout') ?></a></li>
-                            </ul>
-                        </li>
-                    </ul>
-                <?php else: ?>
+                            <div id="notifList"
+                                data-empty-msg="<?= e(t('no_notifications')) ?>"
+                                data-load-error-msg="<?= e(t('failed_to_load_notification')) ?>"
+                                data-clear-error-msg="<?= e(t('failed_to_clear_notifications')) ?>"
+                                data-delete-error-msg="<?= e(t('failed_to_delete_notification')) ?>"
+                                style="max-height:300px;overflow-y:auto;">
+                                <div class="text-center text-muted py-3"><?= t('no_notifications') ?></div>
+                            </div>
+                        </div>
+                    </li>
+                    <li class="nav-item">
+                        <form method="post" action="/api/profile.php" class="d-inline" id="localeSwitcherForm">
+                            <input type="hidden" name="action" value="set_locale">
+                            <select name="locale" class="form-select form-select-sm" onchange="this.form.submit()" style="width:auto;">
+                                <option value="en" <?= $locale === 'en' ? 'selected' : '' ?>>EN</option>
+                                <option value="fr" <?= $locale === 'fr' ? 'selected' : '' ?>>FR</option>
+                                <option value="uk" <?= $locale === 'uk' ? 'selected' : '' ?>>UK</option>
+                            </select>
+                        </form>
+                    </li>
+                    <li class="nav-item">
+                        <button class="btn btn-link nav-link" id="themeToggleBtn" title="Toggle theme">
+                            <i class="bi <?= $theme === 'dark' ? 'bi-sun-fill' : 'bi-moon-fill' ?>" id="themeIcon"></i>
+                        </button>
+                    </li>
+                </ul>
+                <button class="navbar-toggler ms-2" type="button" data-bs-toggle="collapse" data-bs-target="#navbarMain">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+            <?php else: ?>
+                <a class="navbar-brand fw-bold" href="/user/dashboard.php">
+                    <i class="bi bi-cloud-sun-fill text-primary"></i> WeatherStation
+                </a>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarMain">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <div class="collapse navbar-collapse" id="navbarMain">
                     <ul class="navbar-nav ms-auto">
                         <li class="nav-item"><a class="nav-link" href="/auth/login.php"><?= t('login') ?></a></li>
                         <li class="nav-item"><a class="nav-link" href="/auth/register.php"><?= t('register') ?></a></li>
                     </ul>
-                <?php endif; ?>
-            </div>
+                </div>
+            <?php endif; ?>
         </div>
     </nav>
     <div class="container mt-5 pt-3">

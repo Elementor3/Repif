@@ -17,6 +17,7 @@ if ($action === 'set_locale') {
     if (!in_array($locale, $allowed)) $locale = 'en';
     $_SESSION['locale'] = $locale;
     updateUserLocale($conn, $username, $locale);
+
     $ref = $_SERVER['HTTP_REFERER'] ?? '/user/dashboard.php';
     header('Location: ' . $ref);
     exit;

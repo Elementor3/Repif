@@ -8,12 +8,22 @@ $(function () {
     $('#themeToggleBtn').on('click', function () {
         var current = $('html').attr('data-bs-theme');
         var next = current === 'dark' ? 'light' : 'dark';
+
+        // Apply theme instantly in UI, then persist preference on backend.
+        $('html').attr('data-bs-theme', next);
+        var iconClass = next === 'dark' ? 'bi-sun-fill' : 'bi-moon-fill';
+        $('#themeIcon').removeClass('bi-sun-fill bi-moon-fill').addClass(iconClass);
+
         $.post('/api/profile.php', { action: 'set_theme', theme: next }, function (res) {
-            if (res.success) {
-                location.reload();
+            if (!res || !res.success) {
+                $('html').attr('data-bs-theme', current);
+                var oldIconClass = current === 'dark' ? 'bi-sun-fill' : 'bi-moon-fill';
+                $('#themeIcon').removeClass('bi-sun-fill bi-moon-fill').addClass(oldIconClass);
             }
         }, 'json').fail(function () {
-            location.reload();
+            $('html').attr('data-bs-theme', current);
+            var oldIconClass = current === 'dark' ? 'bi-sun-fill' : 'bi-moon-fill';
+            $('#themeIcon').removeClass('bi-sun-fill bi-moon-fill').addClass(oldIconClass);
         });
     });
 
