@@ -436,6 +436,11 @@ body {
     background-color: var(--bs-primary-bg-subtle);
 }
 
+.friends-search-action {
+    min-width: 140px;
+    text-align: center;
+}
+
 @media (max-width: 991.98px) {
     .navbar-themed .container {
         position: relative;

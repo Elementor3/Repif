@@ -8,7 +8,6 @@ require_once __DIR__ . '/../services/notifications.php';
 requireLogin();
 
 $username = $_SESSION['username'];
-$msg = '';
 $err = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -21,12 +20,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $err = t('already_friends');
             } elseif (hasPendingRequest($conn, $username, $receiver)) {
                 $err = t('request_already_sent');
+            } elseif (hasPendingRequest($conn, $receiver, $username)) {
+                $err = t('incoming_request_exists');
             } else {
                 $targetUser = getUserByUsername($conn, $receiver);
                 if ($targetUser) {
                     sendFriendRequest($conn, $username, $receiver);
                     createNotification($conn, $receiver, 'friend_request', t('friend_request_sent'), $_SESSION['full_name'] . ' sent you a friend request', '/user/friends.php');
-                    $msg = t('friend_request_sent');
                 } else {
                     $err = t('user_not_found');
                 }
@@ -40,17 +40,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->execute();
             $req = $stmt->get_result()->fetch_assoc();
             if ($req) createNotification($conn, $req['fk_sender'], 'friend_accepted', t('friend_accepted'), $_SESSION['full_name'] . ' accepted your friend request', '/user/friends.php');
-            $msg = t('friend_accepted');
         }
     } elseif ($action === 'reject') {
         $reqId = (int)($_POST['request_id'] ?? 0);
         rejectRequest($conn, $reqId, $username);
-        $msg = t('success');
     } elseif ($action === 'remove') {
         $friend = trim($_POST['friend'] ?? '');
         if ($friend) {
             removeFriend($conn, $username, $friend);
-            $msg = t('success');
         }
     }
 }
@@ -59,21 +56,15 @@ require_once __DIR__ . '/../includes/header.php';
 
 $friends = getFriends($conn, $username);
 $pendingRequests = getPendingRequests($conn, $username);
-
-// Search users
-$searchResults = [];
-$searchQuery = trim($_GET['search'] ?? '');
-if ($searchQuery) {
-    $like = '%' . $searchQuery . '%';
-    $stmt = $conn->prepare("SELECT pk_username, firstName, lastName, avatar FROM user WHERE (pk_username LIKE ? OR firstName LIKE ? OR lastName LIKE ?) AND pk_username != ? LIMIT 20");
-    $stmt->bind_param("ssss", $like, $like, $like, $username);
-    $stmt->execute();
-    $searchResults = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-}
+$incomingRequests = array_values(array_filter($pendingRequests, function ($r) {
+    return ($r['direction'] ?? '') === 'incoming';
+}));
+$outgoingRequests = array_values(array_filter($pendingRequests, function ($r) {
+    return ($r['direction'] ?? '') === 'outgoing';
+}));
 ?>
 <h2 class="mb-4"><i class="bi bi-people me-2"></i><?= t('friends') ?></h2>
 
-<?php if ($msg): ?><?= showSuccess($msg) ?><?php endif; ?>
 <?php if ($err): ?><?= showError($err) ?><?php endif; ?>
 
 <div class="row g-4">
@@ -81,52 +72,33 @@ if ($searchQuery) {
         <!-- Search -->
         <div class="card mb-4">
             <div class="card-body">
-                <form method="get" class="d-flex gap-2">
-                    <input type="text" name="search" class="form-control" placeholder="<?= t('search') ?> users..." value="<?= e($searchQuery) ?>">
-                    <button type="submit" class="btn btn-primary"><?= t('search') ?></button>
-                </form>
-                <?php if ($searchQuery && $searchResults): ?>
-                <div class="mt-3">
-                    <?php foreach ($searchResults as $u): ?>
-                    <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
-                        <div class="d-flex align-items-center gap-2">
-                            <?php if ($u['avatar']): ?>
-                            <img src="/assets/avatars/presets/<?= e($u['avatar']) ?>" class="rounded-circle" width="32" height="32">
-                            <?php else: ?>
-                            <i class="bi bi-person-circle fs-4"></i>
-                            <?php endif; ?>
-                            <span><?= e($u['firstName'] . ' ' . $u['lastName']) ?> <small class="text-muted">(<?= e($u['pk_username']) ?>)</small></span>
-                        </div>
-                        <?php if (areFriends($conn, $username, $u['pk_username'])): ?>
-                            <span class="badge bg-success">Friends</span>
-                        <?php elseif (hasPendingRequest($conn, $username, $u['pk_username'])): ?>
-                            <span class="badge bg-warning">Pending</span>
-                        <?php else: ?>
-                            <form method="post" class="d-inline">
-                                <input type="hidden" name="action" value="send_request">
-                                <input type="hidden" name="receiver" value="<?= e($u['pk_username']) ?>">
-                                <button type="submit" class="btn btn-sm btn-primary"><?= t('send_request') ?></button>
-                            </form>
-                        <?php endif; ?>
-                    </div>
-                    <?php endforeach; ?>
-                </div>
-                <?php elseif ($searchQuery): ?>
-                <p class="text-muted mt-2"><?= t('no_users_found') ?></p>
-                <?php endif; ?>
+                <input type="text" id="friendsSearch" class="form-control form-control-sm" placeholder="<?= t('search_users') ?>">
+                <div id="friendsSearchResults"
+                    class="chat-search-results d-none mt-2"
+                    data-no-users-msg="<?= e(t('no_users_found')) ?>"
+                    data-error-msg="<?= e(t('error_occurred')) ?>"
+                    data-send-request-label="<?= e(t('send_request')) ?>"
+                    data-friends-label="<?= e(t('friends')) ?>"
+                    data-no-friends-msg="<?= e(t('no_friends')) ?>"
+                    data-no-pending-msg="<?= e(t('no_pending_requests')) ?>"
+                    data-incoming-request-label="<?= e(t('incoming_request')) ?>"
+                    data-outgoing-request-label="<?= e(t('outgoing_request')) ?>"
+                    data-cancel-label="<?= e(t('cancel')) ?>"
+                    data-remove-label="<?= e(t('remove')) ?>"
+                    data-chat-label="<?= e(t('chat')) ?>"
+                    data-remove-confirm-msg="Remove friend?"
+                    data-view-profile-label="<?= e(t('view_profile')) ?>"></div>
             </div>
         </div>
 
         <!-- Friends list -->
         <div class="card">
-            <div class="card-header"><h5 class="mb-0"><?= t('friends') ?> (<?= count($friends) ?>)</h5></div>
+            <div class="card-header"><h5 class="mb-0"><?= t('friends') ?> (<span id="friendsCount"><?= count($friends) ?></span>)</h5></div>
             <div class="card-body">
-                <?php if (empty($friends)): ?>
-                    <p class="text-muted"><?= t('no_friends') ?></p>
-                <?php else: ?>
-                <div class="list-group list-group-flush">
+                <p id="friendsEmpty" class="text-muted <?= empty($friends) ? '' : 'd-none' ?>"><?= t('no_friends') ?></p>
+                <div id="friendsList" class="list-group list-group-flush">
                     <?php foreach ($friends as $f): ?>
-                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                    <div class="list-group-item d-flex justify-content-between align-items-center" data-friend-username="<?= e($f['pk_username']) ?>">
                         <div class="d-flex align-items-center gap-2">
                             <?php if ($f['avatar'] ?? ''): ?>
                             <img src="/assets/avatars/presets/<?= e($f['avatar']) ?>" class="rounded-circle" width="36" height="36">
@@ -145,16 +117,13 @@ if ($searchQuery) {
                             <a href="/user/chat.php?with=<?= urlencode($f['pk_username']) ?>" class="btn btn-sm btn-outline-primary">
                                 <i class="bi bi-chat"></i>
                             </a>
-                            <form method="post" class="d-inline">
-                                <input type="hidden" name="action" value="remove">
-                                <input type="hidden" name="friend" value="<?= e($f['pk_username']) ?>">
-                                <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Remove friend?')"><?= t('remove') ?></button>
-                            </form>
+                            <button type="button" class="btn btn-sm btn-outline-danger js-remove-friend" data-friend="<?= e($f['pk_username']) ?>" title="<?= e(t('remove')) ?>">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
                         </div>
                     </div>
                     <?php endforeach; ?>
                 </div>
-                <?php endif; ?>
             </div>
         </div>
     </div>
@@ -162,32 +131,68 @@ if ($searchQuery) {
     <!-- Pending requests -->
     <div class="col-md-4">
         <div class="card">
-            <div class="card-header"><h5 class="mb-0"><?= t('pending_requests') ?> (<?= count($pendingRequests) ?>)</h5></div>
+            <div class="card-header"><h5 class="mb-0"><?= t('pending_requests') ?></h5></div>
             <div class="card-body">
-                <?php if (empty($pendingRequests)): ?>
-                    <p class="text-muted"><?= t('no_pending_requests') ?></p>
-                <?php else: ?>
-                <?php foreach ($pendingRequests as $r): ?>
-                <div class="d-flex align-items-center gap-2 py-2 border-bottom">
-                    <div class="flex-grow-1">
-                        <div><?= e($r['firstName'] . ' ' . $r['lastName']) ?></div>
-                        <small class="text-muted"><?= formatDateTime($r['createdAt']) ?></small>
+                <h6 class="mb-2"><?= t('incoming_requests') ?> (<span id="incomingCount"><?= count($incomingRequests) ?></span>)</h6>
+                <div id="incomingRequestsList" class="mb-3">
+                    <?php foreach ($incomingRequests as $r): ?>
+                    <div class="d-flex align-items-center gap-2 py-2 border-bottom" data-request-id="<?= (int)$r['pk_requestID'] ?>">
+                        <div>
+                            <?php if (!empty($r['avatar'])): ?>
+                            <img src="/assets/avatars/presets/<?= e($r['avatar']) ?>" class="rounded-circle" width="36" height="36" alt="avatar">
+                            <?php else: ?>
+                            <i class="bi bi-person-circle fs-3"></i>
+                            <?php endif; ?>
+                        </div>
+                        <div class="flex-grow-1">
+                            <div class="fw-semibold"><?= e($r['firstName'] . ' ' . $r['lastName']) ?></div>
+                            <small class="text-muted d-block">@<?= e($r['pk_username']) ?></small>
+                            <small class="text-muted"><?= e(date('d.m.Y H:i', strtotime($r['createdAt']))) ?></small>
+                        </div>
+                        <div class="d-flex align-items-center gap-1">
+                            <a href="/user/view_profile.php?user=<?= urlencode($r['pk_username']) ?>" class="btn btn-sm btn-outline-secondary" title="<?= e(t('view_profile')) ?>">
+                                <i class="bi bi-person"></i>
+                            </a>
+                            <button type="button" class="btn btn-sm btn-outline-success js-incoming-action" data-action="accept" data-request-id="<?= (int)$r['pk_requestID'] ?>" title="<?= e(t('accept')) ?>">
+                                <i class="bi bi-check-lg"></i>
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-danger js-incoming-action" data-action="reject" data-request-id="<?= (int)$r['pk_requestID'] ?>" title="<?= e(t('reject')) ?>">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
                     </div>
-                    <div class="d-flex flex-column gap-1">
-                        <form method="post" class="d-inline">
-                            <input type="hidden" name="action" value="accept">
-                            <input type="hidden" name="request_id" value="<?= $r['pk_requestID'] ?>">
-                            <button type="submit" class="btn btn-sm btn-success w-100"><?= t('accept') ?></button>
-                        </form>
-                        <form method="post" class="d-inline">
-                            <input type="hidden" name="action" value="reject">
-                            <input type="hidden" name="request_id" value="<?= $r['pk_requestID'] ?>">
-                            <button type="submit" class="btn btn-sm btn-outline-danger w-100"><?= t('reject') ?></button>
-                        </form>
-                    </div>
+                    <?php endforeach; ?>
                 </div>
-                <?php endforeach; ?>
-                <?php endif; ?>
+                <p id="incomingEmpty" class="text-muted <?= empty($incomingRequests) ? '' : 'd-none' ?>"><?= t('no_pending_requests') ?></p>
+
+                <h6 class="mb-2"><?= t('outgoing_requests') ?> (<span id="outgoingCount"><?= count($outgoingRequests) ?></span>)</h6>
+                <div id="outgoingRequestsList">
+                    <?php foreach ($outgoingRequests as $r): ?>
+                    <div class="d-flex align-items-center gap-2 py-2 border-bottom" data-request-id="<?= (int)$r['pk_requestID'] ?>" data-outgoing-username="<?= e($r['pk_username']) ?>">
+                        <div>
+                            <?php if (!empty($r['avatar'])): ?>
+                            <img src="/assets/avatars/presets/<?= e($r['avatar']) ?>" class="rounded-circle" width="36" height="36" alt="avatar">
+                            <?php else: ?>
+                            <i class="bi bi-person-circle fs-3"></i>
+                            <?php endif; ?>
+                        </div>
+                        <div class="flex-grow-1">
+                            <div class="fw-semibold"><?= e($r['firstName'] . ' ' . $r['lastName']) ?></div>
+                            <small class="text-muted d-block">@<?= e($r['pk_username']) ?></small>
+                            <small class="text-muted"><?= e(date('d.m.Y H:i', strtotime($r['createdAt']))) ?></small>
+                        </div>
+                        <div class="d-flex align-items-center gap-1">
+                            <a href="/user/view_profile.php?user=<?= urlencode($r['pk_username']) ?>" class="btn btn-sm btn-outline-secondary" title="<?= e(t('view_profile')) ?>">
+                                <i class="bi bi-person"></i>
+                            </a>
+                            <button type="button" class="btn btn-sm btn-outline-danger js-cancel-request" data-request-id="<?= (int)$r['pk_requestID'] ?>" title="<?= e(t('cancel')) ?>">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+                <p id="outgoingEmpty" class="text-muted <?= empty($outgoingRequests) ? '' : 'd-none' ?>"><?= t('no_pending_requests') ?></p>
             </div>
         </div>
     </div>

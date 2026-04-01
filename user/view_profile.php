@@ -16,17 +16,13 @@ if (!$viewUsername || $viewUsername === $username) {
     exit;
 }
 
-// Only allow viewing profiles of friends
-if (!areFriends($conn, $username, $viewUsername)) {
-    header('Location: /user/friends.php');
-    exit;
-}
-
 $profile = getUserByUsername($conn, $viewUsername);
 if (!$profile) {
     header('Location: /user/friends.php');
     exit;
 }
+
+$isFriend = areFriends($conn, $username, $viewUsername);
 
 require_once __DIR__ . '/../includes/header.php';
 ?>
@@ -46,12 +42,16 @@ require_once __DIR__ . '/../includes/header.php';
                 <?php endif; ?>
                 <h4><?= e($profile['firstName'] . ' ' . $profile['lastName']) ?></h4>
                 <p class="text-muted">@<?= e($profile['pk_username']) ?></p>
+                <?php if ($isFriend): ?>
                 <span class="badge bg-success mb-2"><i class="bi bi-people-fill me-1"></i><?= t('friends') ?></span>
                 <div class="d-flex gap-2 justify-content-center mt-2">
                     <a href="/user/chat.php?with=<?= urlencode($viewUsername) ?>" class="btn btn-primary btn-sm">
                         <i class="bi bi-chat me-1"></i><?= t('chat') ?>
                     </a>
                 </div>
+                <?php else: ?>
+                <span class="badge bg-secondary mb-2"><i class="bi bi-person me-1"></i><?= t('profile') ?></span>
+                <?php endif; ?>
             </div>
         </div>
     </div>
