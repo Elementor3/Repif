@@ -25,8 +25,8 @@ function sendFriendRequest(mysqli $conn, string $sender, string $receiver): bool
 }
 
 function getPendingRequests(mysqli $conn, string $username): array {
-    $stmt = $conn->prepare("SELECT r.*, u.firstName, u.lastName, u.avatar FROM request r JOIN user u ON r.fk_sender = u.pk_username WHERE r.fk_receiver = ? AND r.status = 'pending' ORDER BY r.createdAt DESC");
-    $stmt->bind_param("s", $username);
+    $stmt = $conn->prepare("SELECT r.pk_requestID, r.fk_sender, r.fk_receiver, r.status, r.createdAt, CASE WHEN r.fk_sender = ? THEN 'outgoing' ELSE 'incoming' END AS direction, u.pk_username, u.firstName, u.lastName, u.avatar FROM request r JOIN user u ON u.pk_username = CASE WHEN r.fk_sender = ? THEN r.fk_receiver ELSE r.fk_sender END WHERE (r.fk_sender = ? OR r.fk_receiver = ?) AND r.status = 'pending' ORDER BY r.createdAt DESC");
+    $stmt->bind_param("ssss", $username, $username, $username, $username);
     $stmt->execute();
     return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 }
@@ -54,6 +54,13 @@ function rejectRequest(mysqli $conn, int $requestId, string $username): bool {
     return $stmt->execute();
 }
 
+function cancelOutgoingRequest(mysqli $conn, int $requestId, string $username): bool {
+    $stmt = $conn->prepare("UPDATE request SET status='cancelled' WHERE pk_requestID=? AND fk_sender=? AND status='pending'");
+    $stmt->bind_param("is", $requestId, $username);
+    $stmt->execute();
+    return $stmt->affected_rows === 1;
+}
+
 function removeFriend(mysqli $conn, string $user1, string $user2): bool {
     $a = min($user1, $user2);
     $b = max($user1, $user2);
@@ -71,5 +78,9 @@ function hasPendingRequest(mysqli $conn, string $sender, string $receiver): bool
     $stmt->bind_param("ss", $sender, $receiver);
     $stmt->execute();
     return $stmt->get_result()->num_rows > 0;
+}
+
+function hasPendingRequestBetween(mysqli $conn, string $user1, string $user2): bool {
+    return hasPendingRequest($conn, $user1, $user2) || hasPendingRequest($conn, $user2, $user1);
 }
 ?>
