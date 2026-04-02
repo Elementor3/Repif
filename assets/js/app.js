@@ -67,6 +67,21 @@ $(function () {
         $('#notifList').html('<div class="text-center text-muted py-3"></div>').find('div').text(emptyMsg);
     }
 
+    function loadChatUnreadBadge() {
+        if (!$('#chatUnreadBadge').length) return;
+
+        $.get('/api/chat.php', { action: 'get_unread_counts' }, function (res) {
+            if (!res || !res.success) return;
+
+            var total = parseInt(res.total || 0, 10);
+            if (total > 0) {
+                $('#chatUnreadBadge').text(total).removeClass('d-none');
+            } else {
+                $('#chatUnreadBadge').text('0').addClass('d-none');
+            }
+        }, 'json').fail(function () { });
+    }
+
     function loadNotificationList() {
         $.get('/api/notifications.php', { action: 'get_all' }, function (res) {
             if (res.success && res.notifications && res.notifications.length > 0) {
@@ -175,6 +190,11 @@ $(function () {
                 alert($('#notifList').data('delete-error-msg') || 'Failed to delete notification');
             });
         });
+    }
+
+    if ($('#chatUnreadBadge').length) {
+        loadChatUnreadBadge();
+        setInterval(loadChatUnreadBadge, 3000);
     }
 
     // Global AJAX error handler

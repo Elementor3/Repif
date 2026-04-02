@@ -235,4 +235,10 @@ return [
     'incoming' => 'Entrante',
     'outgoing' => 'Sortante',
     'incoming_request_open_pending' => 'Demande entrante - ouvrez les demandes en attente',
+    'unknown_user' => 'Utilisateur inconnu',
+    'group_avatar' => 'Avatar du groupe',
+    'leave_group' => 'Quitter le groupe',
+    'confirm_leave_group' => 'Voulez-vous vraiment quitter ce groupe ?',
+    'group_left_notice' => '{name} a quitté le groupe',
+    'group_joined_notice' => '{name} a rejoint le groupe',
 ];

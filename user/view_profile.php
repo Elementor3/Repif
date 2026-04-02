@@ -10,6 +10,33 @@ requireLogin();
 
 $username = $_SESSION['username'];
 $viewUsername = trim($_GET['user'] ?? '');
+$backParam = trim((string)($_GET['back'] ?? ''));
+
+function resolveSafeBackUrl(string $candidate): string {
+    $default = '/user/friends.php';
+    if ($candidate === '') {
+        return $default;
+    }
+
+    $parts = parse_url($candidate);
+    if ($parts === false) {
+        return $default;
+    }
+
+    if (isset($parts['scheme']) || isset($parts['host'])) {
+        return $default;
+    }
+
+    $path = (string)($parts['path'] ?? '');
+    if ($path === '' || strncmp($path, '/user/', 6) !== 0) {
+        return $default;
+    }
+
+    $query = isset($parts['query']) ? ('?' . $parts['query']) : '';
+    return $path . $query;
+}
+
+$backUrl = resolveSafeBackUrl($backParam);
 
 if (!$viewUsername || $viewUsername === $username) {
     header('Location: /user/profile.php');
@@ -27,7 +54,7 @@ $isFriend = areFriends($conn, $username, $viewUsername);
 require_once __DIR__ . '/../includes/header.php';
 ?>
 <div class="d-flex align-items-center mb-4 gap-2">
-    <a href="/user/friends.php" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i><?= t('back') ?></a>
+    <a href="<?= e($backUrl) ?>" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i><?= t('back') ?></a>
     <h2 class="mb-0"><i class="bi bi-person-circle me-2"></i><?= e($profile['firstName'] . ' ' . $profile['lastName']) ?></h2>
 </div>
 

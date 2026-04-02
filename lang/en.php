@@ -235,4 +235,10 @@ return [
     'incoming' => 'Incoming',
     'outgoing' => 'Outgoing',
     'incoming_request_open_pending' => 'Incoming request - open Pending Requests',
+    'unknown_user' => 'Unknown user',
+    'group_avatar' => 'Group avatar',
+    'leave_group' => 'Leave group',
+    'confirm_leave_group' => 'Are you sure you want to leave this group?',
+    'group_left_notice' => '{name} left the group',
+    'group_joined_notice' => '{name} joined the group',
 ];

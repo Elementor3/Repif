@@ -16,6 +16,7 @@ $(function () {
     var $outgoingList = $('#outgoingRequestsList');
     var $outgoingCount = $('#outgoingCount');
     var $outgoingEmpty = $('#outgoingEmpty');
+    var backToFriends = encodeURIComponent('/user/friends.php');
 
     function esc(str) {
         return $('<div>').text(str || '').html();
@@ -69,7 +70,7 @@ $(function () {
             html += '<div><div class="fw-semibold">' + esc((f.firstName || '') + ' ' + (f.lastName || '')) + '</div><small class="text-muted">@' + esc(f.pk_username) + '</small></div>';
             html += '</div>';
             html += '<div class="d-flex gap-1">';
-            html += '<a href="/user/view_profile.php?user=' + encodeURIComponent(f.pk_username) + '" class="btn btn-sm btn-outline-secondary" title="' + esc($friendsResults.data('view-profile-label')) + '"><i class="bi bi-person"></i></a>';
+            html += '<a href="/user/view_profile.php?user=' + encodeURIComponent(f.pk_username) + '&back=' + backToFriends + '" class="btn btn-sm btn-outline-secondary" title="' + esc($friendsResults.data('view-profile-label')) + '"><i class="bi bi-person"></i></a>';
             html += '<a href="/user/chat.php?with=' + encodeURIComponent(f.pk_username) + '" class="btn btn-sm btn-outline-primary" title="' + esc($friendsResults.data('chat-label')) + '"><i class="bi bi-chat"></i></a>';
             html += '<button type="button" class="btn btn-sm btn-outline-danger js-remove-friend" data-friend="' + esc(f.pk_username) + '" title="' + esc($friendsResults.data('remove-label')) + '"><i class="bi bi-x-lg"></i></button>';
             html += '</div></div>';
@@ -95,7 +96,7 @@ $(function () {
             incomingHtml += '<div>' + avatarMarkup(r.avatar || '', r.pk_username || '', 36, 'fs-3') + '</div>';
             incomingHtml += '<div class="flex-grow-1"><div class="fw-semibold">' + esc((r.firstName || '') + ' ' + (r.lastName || '')) + '</div><small class="text-muted d-block">@' + esc(r.pk_username) + '</small><small class="text-muted">' + esc(formatEuDateFromSql(r.createdAt)) + '</small></div>';
             incomingHtml += '<div class="d-flex align-items-center gap-1">';
-            incomingHtml += '<a href="/user/view_profile.php?user=' + encodeURIComponent(r.pk_username) + '" class="btn btn-sm btn-outline-secondary" title="' + esc($friendsResults.data('view-profile-label')) + '"><i class="bi bi-person"></i></a>';
+            incomingHtml += '<a href="/user/view_profile.php?user=' + encodeURIComponent(r.pk_username) + '&back=' + backToFriends + '" class="btn btn-sm btn-outline-secondary" title="' + esc($friendsResults.data('view-profile-label')) + '"><i class="bi bi-person"></i></a>';
             incomingHtml += '<button type="button" class="btn btn-sm btn-outline-success js-incoming-action" data-action="accept" data-request-id="' + Number(r.pk_requestID) + '"><i class="bi bi-check-lg"></i></button>';
             incomingHtml += '<button type="button" class="btn btn-sm btn-outline-danger js-incoming-action" data-action="reject" data-request-id="' + Number(r.pk_requestID) + '"><i class="bi bi-x-lg"></i></button>';
             incomingHtml += '</div></div>';
@@ -107,7 +108,7 @@ $(function () {
             outgoingHtml += '<div>' + avatarMarkup(r.avatar || '', r.pk_username || '', 36, 'fs-3') + '</div>';
             outgoingHtml += '<div class="flex-grow-1"><div class="fw-semibold">' + esc((r.firstName || '') + ' ' + (r.lastName || '')) + '</div><small class="text-muted d-block">@' + esc(r.pk_username) + '</small><small class="text-muted">' + esc(formatEuDateFromSql(r.createdAt)) + '</small></div>';
             outgoingHtml += '<div class="d-flex align-items-center gap-1">';
-            outgoingHtml += '<a href="/user/view_profile.php?user=' + encodeURIComponent(r.pk_username) + '" class="btn btn-sm btn-outline-secondary" title="' + esc($friendsResults.data('view-profile-label')) + '"><i class="bi bi-person"></i></a>';
+            outgoingHtml += '<a href="/user/view_profile.php?user=' + encodeURIComponent(r.pk_username) + '&back=' + backToFriends + '" class="btn btn-sm btn-outline-secondary" title="' + esc($friendsResults.data('view-profile-label')) + '"><i class="bi bi-person"></i></a>';
             outgoingHtml += '<button type="button" class="btn btn-sm btn-outline-danger js-cancel-request" data-request-id="' + Number(r.pk_requestID) + '" title="' + esc($friendsResults.data('cancel-label')) + '"><i class="bi bi-x-lg"></i></button>';
             outgoingHtml += '</div></div>';
         });
@@ -145,7 +146,8 @@ $(function () {
             html += '<div class="chat-search-item d-flex justify-content-between align-items-center gap-2">';
             html += '<div class="d-flex align-items-center gap-2">' + avatarMarkup(user.avatar || '', user.pk_username || '', 32, 'fs-4') + '<span>' + esc((user.firstName || '') + ' ' + (user.lastName || '')) + ' <small class="text-muted">@' + esc(user.pk_username) + '</small></span></div>';
             html += '<div class="d-flex align-items-center gap-1">';
-            html += '<a href="/user/view_profile.php?user=' + encodeURIComponent(user.pk_username) + '" class="btn btn-sm btn-outline-secondary" title="' + esc($friendsResults.data('view-profile-label')) + '"><i class="bi bi-person"></i></a>';
+            html += '<a href="/user/view_profile.php?user=' + encodeURIComponent(user.pk_username) + '&back=' + backToFriends + '" class="btn btn-sm btn-outline-secondary" title="' + esc($friendsResults.data('view-profile-label')) + '"><i class="bi bi-person"></i></a>';
+            html += '<a href="/user/chat.php?with=' + encodeURIComponent(user.pk_username) + '" class="btn btn-sm btn-outline-primary" title="' + esc($friendsResults.data('chat-label')) + '"><i class="bi bi-chat"></i></a>';
             html += buildActionHtml(user);
             html += '</div></div>';
         });

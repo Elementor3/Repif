@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/chat.php';
+
 function getUserByUsername(mysqli $conn, string $username): ?array {
     $stmt = $conn->prepare("SELECT * FROM user WHERE pk_username = ?");
     $stmt->bind_param("s", $username);
@@ -92,6 +94,14 @@ function adminDeleteUser(mysqli $conn, string $username): bool {
     if ($user && $user['role'] === 'Admin' && $adminCount <= 1) {
         return false;
     }
+
+    $profile = getUserByUsername($conn, $username);
+    $displayName = '';
+    if ($profile) {
+        $displayName = trim((string)($profile['firstName'] ?? '') . ' ' . (string)($profile['lastName'] ?? ''));
+    }
+    notifyUserLeftAllGroups($conn, $username, $displayName !== '' ? $displayName : $username);
+
     $stmt = $conn->prepare("DELETE FROM user WHERE pk_username=?");
     $stmt->bind_param("s", $username);
     return $stmt->execute();

@@ -235,4 +235,10 @@ return [
     'incoming' => 'Вхідний',
     'outgoing' => 'Вихідний',
     'incoming_request_open_pending' => 'Є вхідний запит - відкрийте Очікуючі запити',
+    'unknown_user' => 'Невідомий користувач',
+    'group_avatar' => 'Аватар групи',
+    'leave_group' => 'Покинути групу',
+    'confirm_leave_group' => 'Ви впевнені, що хочете покинути цю групу?',
+    'group_left_notice' => '{name} покинув(ла) групу',
+    'group_joined_notice' => '{name} приєднався(лася) до групи',
 ];

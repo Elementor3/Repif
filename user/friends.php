@@ -111,7 +111,7 @@ $outgoingRequests = array_values(array_filter($pendingRequests, function ($r) {
                             </div>
                         </div>
                         <div class="d-flex gap-1">
-                            <a href="/user/view_profile.php?user=<?= urlencode($f['pk_username']) ?>" class="btn btn-sm btn-outline-secondary">
+                            <a href="/user/view_profile.php?user=<?= urlencode($f['pk_username']) ?>&back=<?= urlencode('/user/friends.php') ?>" class="btn btn-sm btn-outline-secondary">
                                 <i class="bi bi-person"></i>
                             </a>
                             <a href="/user/chat.php?with=<?= urlencode($f['pk_username']) ?>" class="btn btn-sm btn-outline-primary">
@@ -150,7 +150,7 @@ $outgoingRequests = array_values(array_filter($pendingRequests, function ($r) {
                             <small class="text-muted"><?= e(date('d.m.Y H:i', strtotime($r['createdAt']))) ?></small>
                         </div>
                         <div class="d-flex align-items-center gap-1">
-                            <a href="/user/view_profile.php?user=<?= urlencode($r['pk_username']) ?>" class="btn btn-sm btn-outline-secondary" title="<?= e(t('view_profile')) ?>">
+                            <a href="/user/view_profile.php?user=<?= urlencode($r['pk_username']) ?>&back=<?= urlencode('/user/friends.php') ?>" class="btn btn-sm btn-outline-secondary" title="<?= e(t('view_profile')) ?>">
                                 <i class="bi bi-person"></i>
                             </a>
                             <button type="button" class="btn btn-sm btn-outline-success js-incoming-action" data-action="accept" data-request-id="<?= (int)$r['pk_requestID'] ?>" title="<?= e(t('accept')) ?>">
@@ -182,7 +182,7 @@ $outgoingRequests = array_values(array_filter($pendingRequests, function ($r) {
                             <small class="text-muted"><?= e(date('d.m.Y H:i', strtotime($r['createdAt']))) ?></small>
                         </div>
                         <div class="d-flex align-items-center gap-1">
-                            <a href="/user/view_profile.php?user=<?= urlencode($r['pk_username']) ?>" class="btn btn-sm btn-outline-secondary" title="<?= e(t('view_profile')) ?>">
+                            <a href="/user/view_profile.php?user=<?= urlencode($r['pk_username']) ?>&back=<?= urlencode('/user/friends.php') ?>" class="btn btn-sm btn-outline-secondary" title="<?= e(t('view_profile')) ?>">
                                 <i class="bi bi-person"></i>
                             </a>
                             <button type="button" class="btn btn-sm btn-outline-danger js-cancel-request" data-request-id="<?= (int)$r['pk_requestID'] ?>" title="<?= e(t('cancel')) ?>">

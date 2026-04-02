@@ -104,8 +104,16 @@ function getChatUploadsDir(): string {
     return getUploadsBaseDir() . DIRECTORY_SEPARATOR . 'chat';
 }
 
+function getChatDraftUploadsDir(): string {
+    return getUploadsBaseDir() . DIRECTORY_SEPARATOR . 'chat_drafts';
+}
+
 function getAvatarUploadsDir(): string {
     return getUploadsBaseDir() . DIRECTORY_SEPARATOR . 'avatars';
+}
+
+function getGroupAvatarUploadsDir(): string {
+    return getUploadsBaseDir() . DIRECTORY_SEPARATOR . 'group_avatars';
 }
 
 function ensureDirectory(string $dir): bool {
@@ -242,6 +250,49 @@ function getAvatarUrl(?string $avatar, ?string $username = null): ?string {
         if (!$username) return null;
         $fileToken = getUploadedAvatarFileName($avatar) ?? '';
         return '/download_avatar.php?user=' . rawurlencode($username) . '&v=' . rawurlencode($fileToken);
+    }
+
+    return '/assets/avatars/' . rawurlencode(basename($avatar));
+}
+
+function isUploadedGroupAvatarValue(?string $avatar): bool {
+    return is_string($avatar) && strncmp($avatar, 'group_upload:', 13) === 0;
+}
+
+function getUploadedGroupAvatarFileName(?string $avatar): ?string {
+    if (!isUploadedGroupAvatarValue($avatar)) {
+        return null;
+    }
+
+    $stored = basename(substr((string)$avatar, 13));
+    return $stored !== '' ? $stored : null;
+}
+
+function buildUploadedGroupAvatarValue(string $storedName): string {
+    return 'group_upload:' . basename($storedName);
+}
+
+function deleteUploadedGroupAvatarFile(?string $avatar): void {
+    $storedName = getUploadedGroupAvatarFileName($avatar);
+    if (!$storedName) {
+        return;
+    }
+
+    $path = getGroupAvatarUploadsDir() . DIRECTORY_SEPARATOR . $storedName;
+    if (is_file($path)) {
+        @unlink($path);
+    }
+}
+
+function getGroupAvatarUrl(?string $avatar, int $chatId): ?string {
+    $avatar = trim((string)$avatar);
+    if ($avatar === '' || $chatId <= 0) {
+        return null;
+    }
+
+    if (isUploadedGroupAvatarValue($avatar)) {
+        $fileToken = getUploadedGroupAvatarFileName($avatar) ?? '';
+        return '/download_group_avatar.php?chat=' . $chatId . '&v=' . rawurlencode($fileToken);
     }
 
     return '/assets/avatars/' . rawurlencode(basename($avatar));
