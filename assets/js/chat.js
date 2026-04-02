@@ -48,15 +48,20 @@
 		return '&back=' + encodeURIComponent(back);
 	}
 
+	function isDeletedUserMarker(value) {
+		var marker = String(value || '').trim();
+		return marker === '__unknown_user__';
+	}
+
 	function resolveChatName(displayName, fallbackName) {
 		var d = String(displayName || '').trim();
-		if (d === '__unknown_user__') {
+		if (isDeletedUserMarker(d)) {
 			return chatUnknownUserText;
 		}
 		if (d) return d;
 
 		var f = String(fallbackName || '').trim();
-		if (f === '__unknown_user__') {
+		if (isDeletedUserMarker(f)) {
 			return chatUnknownUserText;
 		}
 		if (f) return f;
@@ -228,7 +233,7 @@
 				if (!senderName) {
 					senderName = String(m.fk_sender || '').trim() || chatUnknownUserText;
 				}
-				if (senderName === '__unknown_user__') {
+				if (isDeletedUserMarker(senderName)) {
 					senderName = chatUnknownUserText;
 				}
 				html += '<small class="text-muted d-block mb-0">' + esc(senderName) + '</small>';

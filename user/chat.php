@@ -87,18 +87,23 @@ if ($activeConv) {
     $initialMessages = getMessages($conn, $activeConvId, 0);
 }
 
-$renderChatName = function (?string $displayName, ?string $name): string {
+$isDeletedUserMarker = function (?string $value): bool {
+    $marker = trim((string)($value ?? ''));
+    return $marker === getUnknownUserMarker();
+};
+
+$renderChatName = function (?string $displayName, ?string $name) use ($isDeletedUserMarker): string {
     $candidate = trim((string)($displayName ?? ''));
-    if ($candidate === getUnknownUserMarker()) {
-        return t('unknown_user');
+    if ($isDeletedUserMarker($candidate)) {
+        return t('deleted_user');
     }
     if ($candidate !== '') {
         return $candidate;
     }
 
     $fallback = trim((string)($name ?? ''));
-    if ($fallback === getUnknownUserMarker()) {
-        return t('unknown_user');
+    if ($isDeletedUserMarker($fallback)) {
+        return t('deleted_user');
     }
     return $fallback !== '' ? $fallback : 'Chat';
 };
@@ -107,7 +112,7 @@ $renderSystemText = function (array $message): string {
     $systemType = (string)($message['system_type'] ?? '');
     $actorName = trim((string)($message['system_actor_name'] ?? ''));
     $actorUsername = trim((string)($message['system_actor_username'] ?? ''));
-    $actor = $actorName !== '' ? $actorName : ($actorUsername !== '' ? $actorUsername : t('unknown_user'));
+    $actor = $actorName !== '' ? $actorName : ($actorUsername !== '' ? $actorUsername : t('deleted_user'));
 
     if ($systemType === 'left_group') {
         return str_replace('{name}', $actor, t('group_left_notice'));
@@ -158,7 +163,7 @@ $renderSystemText = function (array $message): string {
                                 if ($system && in_array(($system['type'] ?? ''), ['left_group', 'joined_group'], true)) {
                                     $systemActor = trim((string)($system['actor_name'] ?? ''));
                                     if ($systemActor === '') {
-                                        $systemActor = trim((string)($system['actor_username'] ?? '')) ?: t('unknown_user');
+                                        $systemActor = trim((string)($system['actor_username'] ?? '')) ?: t('deleted_user');
                                     }
                                     if (($system['type'] ?? '') === 'joined_group') {
                                         echo e(str_replace('{name}', $systemActor, t('group_joined_notice')));
@@ -267,7 +272,10 @@ $renderSystemText = function (array $message): string {
                                 <?php
                                 $senderName = trim((string)($m['firstName'] ?? '') . ' ' . (string)($m['lastName'] ?? ''));
                                 if ($senderName === '') {
-                                    $senderName = trim((string)($m['fk_sender'] ?? '')) ?: t('unknown_user');
+                                    $senderName = trim((string)($m['fk_sender'] ?? '')) ?: t('deleted_user');
+                                }
+                                if ($isDeletedUserMarker($senderName)) {
+                                    $senderName = t('deleted_user');
                                 }
                                 ?>
                                 <small class="text-muted d-block mb-0"><?= e($senderName) ?></small>
@@ -442,7 +450,7 @@ $renderSystemText = function (array $message): string {
             noFriendsToAddText: <?= json_encode(t('no_friends_to_add')) ?>,
             confirmRemoveMemberText: <?= json_encode(t('confirm_remove_member')) ?>,
             groupNameRequiredText: <?= json_encode(t('group_name_required')) ?>,
-            unknownUserText: <?= json_encode(t('unknown_user')) ?>,
+            unknownUserText: <?= json_encode(t('deleted_user')) ?>,
             leaveGroupText: <?= json_encode(t('leave_group')) ?>,
             confirmLeaveGroupText: <?= json_encode(t('confirm_leave_group')) ?>,
             groupLeftNoticeText: <?= json_encode(t('group_left_notice')) ?>,
