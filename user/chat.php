@@ -12,10 +12,16 @@ $msg = '';
 // Handle opening a private chat with a friend
 if (isset($_GET['with'])) {
     $withUser = trim($_GET['with']);
-    if (areFriends($conn, $username, $withUser)) {
+    if ($withUser !== '' && $withUser !== $username) {
+        $stmt = $conn->prepare("SELECT pk_username FROM user WHERE pk_username = ? LIMIT 1");
+        $stmt->bind_param("s", $withUser);
+        $stmt->execute();
+        $exists = (bool)$stmt->get_result()->fetch_assoc();
+        if ($exists) {
         $convId = getOrCreatePrivateConversation($conn, $username, $withUser);
         header("Location: /user/chat.php?conv=$convId");
         exit;
+        }
     }
 }
 
@@ -24,8 +30,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'create_group') {
         $name = trim($_POST['group_name'] ?? '');
         $description = trim($_POST['group_description'] ?? '');
-        $members = $_POST['members'] ?? [];
-        if ($name && $members) {
+        $members = (array)($_POST['members'] ?? []);
+        if ($name) {
             $convId = createGroupConversation($conn, $name, $description, $username, $members);
             header("Location: /user/chat.php?conv=$convId");
             exit;
@@ -36,6 +42,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 require_once __DIR__ . '/../includes/header.php';
 
 $activeConvId = isset($_GET['conv']) ? (int)$_GET['conv'] : 0;
+
+if ($activeConvId && isParticipant($conn, $activeConvId, $username)) {
+    markConversationRead($conn, $activeConvId, $username);
+}
 
 $conversations = getConversations($conn, $username);
 $activeConv = null;
@@ -52,15 +62,66 @@ if ($activeConvId) {
             $stmt->bind_param("i", $activeConvId);
             $stmt->execute();
             $activeConv = $stmt->get_result()->fetch_assoc();
+
+            if ($activeConv && ($activeConv['type'] ?? '') === 'private') {
+                $stmt2 = $conn->prepare("SELECT u.pk_username, u.firstName, u.lastName, u.avatar FROM chat_participant cp JOIN user u ON cp.fk_user = u.pk_username WHERE cp.fk_conversation = ? AND cp.fk_user != ? LIMIT 1");
+                $stmt2->bind_param("is", $activeConvId, $username);
+                $stmt2->execute();
+                $other = $stmt2->get_result()->fetch_assoc();
+                if ($other) {
+                    $activeConv['display_name'] = $other['firstName'] . ' ' . $other['lastName'];
+                    $activeConv['other_username'] = $other['pk_username'];
+                    $activeConv['other_avatar'] = $other['avatar'];
+                } else {
+                    $activeConv['display_name'] = getUnknownUserMarker();
+                    $activeConv['other_username'] = '';
+                    $activeConv['other_avatar'] = '';
+                }
+            }
         }
     }
 }
 
-$friends = getFriends($conn, $username);
+$initialMessages = [];
+if ($activeConv) {
+    $initialMessages = getMessages($conn, $activeConvId, 0);
+}
+
+$renderChatName = function (?string $displayName, ?string $name): string {
+    $candidate = trim((string)($displayName ?? ''));
+    if ($candidate === getUnknownUserMarker()) {
+        return t('unknown_user');
+    }
+    if ($candidate !== '') {
+        return $candidate;
+    }
+
+    $fallback = trim((string)($name ?? ''));
+    if ($fallback === getUnknownUserMarker()) {
+        return t('unknown_user');
+    }
+    return $fallback !== '' ? $fallback : 'Chat';
+};
+
+$renderSystemText = function (array $message): string {
+    $systemType = (string)($message['system_type'] ?? '');
+    $actorName = trim((string)($message['system_actor_name'] ?? ''));
+    $actorUsername = trim((string)($message['system_actor_username'] ?? ''));
+    $actor = $actorName !== '' ? $actorName : ($actorUsername !== '' ? $actorUsername : t('unknown_user'));
+
+    if ($systemType === 'left_group') {
+        return str_replace('{name}', $actor, t('group_left_notice'));
+    }
+    if ($systemType === 'joined_group') {
+        return str_replace('{name}', $actor, t('group_joined_notice'));
+    }
+
+    return '';
+};
 ?>
 <h2 class="mb-3"><i class="bi bi-chat-dots me-2"></i><?= t('chat') ?></h2>
 
-<div class="chat-container">
+<div class="chat-container <?= $activeConv ? 'chat-mobile-open' : '' ?>" id="chatContainer">
     <!-- Sidebar -->
     <div class="chat-sidebar">
         <div class="p-2 border-bottom">
@@ -70,34 +131,50 @@ $friends = getFriends($conn, $username);
                 <i class="bi bi-people-fill me-1"></i><?= t('new_group') ?>
             </button>
         </div>
-        <div class="chat-sidebar-list">
+        <div class="chat-sidebar-list" id="chatSidebarList">
             <?php if (empty($conversations)): ?>
                 <div class="text-center text-muted py-4 small"><?= t('no_conversations') ?></div>
-                <div class="px-2">
-                    <?php foreach ($friends as $f): ?>
-                        <a href="/user/chat.php?with=<?= urlencode($f['pk_username']) ?>" class="d-block text-decoration-none chat-conv-item">
-                            <span class="conv-avatar"><i class="bi bi-person-circle"></i></span>
-                            <div class="conv-info">
-                                <div class="conv-name"><?= e($f['firstName'] . ' ' . $f['lastName']) ?></div>
-                                <div class="conv-preview"><?= t('new_chat') ?></div>
-                            </div>
-                        </a>
-                    <?php endforeach; ?>
-                </div>
             <?php else: ?>
                 <?php foreach ($conversations as $c): ?>
-                    <a href="/user/chat.php?conv=<?= $c['pk_conversationID'] ?>" class="text-decoration-none chat-conv-item <?= $activeConvId == $c['pk_conversationID'] ? 'active' : '' ?>">
-                        <span class="conv-avatar">
-                            <?php if ($c['type'] === 'group'): ?>
+                    <a href="/user/chat.php?conv=<?= $c['pk_conversationID'] ?>" data-conv-id="<?= (int)$c['pk_conversationID'] ?>" class="text-decoration-none chat-conv-item <?= $activeConvId == $c['pk_conversationID'] ? 'active' : '' ?>">
+                        <?php if ($c['type'] === 'group' && ($convGroupAvatarUrl = getGroupAvatarUrl((string)($c['avatar'] ?? ''), (int)$c['pk_conversationID']))): ?>
+                            <img src="<?= e($convGroupAvatarUrl) ?>" class="conv-avatar" alt="avatar">
+                        <?php elseif ($c['type'] === 'group'): ?>
+                            <span class="conv-avatar">
                                 <i class="bi bi-people-fill"></i>
-                            <?php else: ?>
+                            </span>
+                        <?php elseif (!empty($c['other_username']) && !empty($c['other_avatar']) && ($convAvatarUrl = getAvatarUrl($c['other_avatar'], $c['other_username']))): ?>
+                            <img src="<?= e($convAvatarUrl) ?>" class="conv-avatar" alt="avatar">
+                        <?php else: ?>
+                            <span class="conv-avatar">
                                 <i class="bi bi-person-circle"></i>
-                            <?php endif; ?>
-                        </span>
+                            </span>
+                        <?php endif; ?>
                         <div class="conv-info">
-                            <div class="conv-name"><?= e($c['display_name'] ?? $c['name'] ?? 'Chat') ?></div>
-                            <div class="conv-preview"><?= e($c['last_message'] ?? '') ?></div>
+                            <div class="conv-name"><?= e($renderChatName($c['display_name'] ?? null, $c['name'] ?? null)) ?></div>
+                            <div class="conv-preview">
+                                <?php
+                                $system = parseSystemMessageToken((string)($c['last_message'] ?? ''));
+                                if ($system && in_array(($system['type'] ?? ''), ['left_group', 'joined_group'], true)) {
+                                    $systemActor = trim((string)($system['actor_name'] ?? ''));
+                                    if ($systemActor === '') {
+                                        $systemActor = trim((string)($system['actor_username'] ?? '')) ?: t('unknown_user');
+                                    }
+                                    if (($system['type'] ?? '') === 'joined_group') {
+                                        echo e(str_replace('{name}', $systemActor, t('group_joined_notice')));
+                                    } else {
+                                        echo e(str_replace('{name}', $systemActor, t('group_left_notice')));
+                                    }
+                                } else {
+                                    echo e($c['last_message'] ?? '');
+                                }
+                                ?>
+                            </div>
                         </div>
+                        <span class="badge rounded-pill bg-danger ms-2 chat-conv-unread <?= ((int)($c['unread_count'] ?? 0) > 0) ? '' : 'd-none' ?>"
+                            data-conv-unread="<?= (int)$c['pk_conversationID'] ?>">
+                            <?= (int)($c['unread_count'] ?? 0) ?>
+                        </span>
                     </a>
                 <?php endforeach; ?>
             <?php endif; ?>
@@ -105,24 +182,56 @@ $friends = getFriends($conn, $username);
     </div>
 
     <!-- Main chat area -->
-    <div class="chat-main">
+    <div class="chat-main" id="chatMain">
         <?php if ($activeConv): ?>
-            <div class="p-3 border-bottom d-flex justify-content-between align-items-center">
+            <div class="p-3 border-bottom d-flex justify-content-between align-items-center chat-main-header">
                 <?php if ($activeConv['type'] === 'group'): ?>
-                    <strong id="groupTitleLink" style="cursor:pointer;" data-conv-id="<?= $activeConvId ?>">
-                        <?= e($activeConv['display_name'] ?? $activeConv['name'] ?? 'Chat') ?>
-                    </strong>
-                    <span class="badge bg-secondary"><?= t('group_chat') ?></span>
+                    <div class="d-flex align-items-center gap-2">
+                        <button type="button" class="btn btn-sm btn-outline-secondary d-sm-none" id="chatBackBtn" title="<?= e(t('back')) ?>">
+                            <i class="bi bi-arrow-left"></i>
+                        </button>
+                        <button type="button" class="chat-group-header-trigger" id="groupHeaderInfoTrigger" data-conv-id="<?= $activeConvId ?>" title="<?= e(t('group_info')) ?>">
+                            <?php $activeGroupAvatarUrl = getGroupAvatarUrl((string)($activeConv['avatar'] ?? ''), (int)$activeConvId); ?>
+                            <?php if (!empty($activeGroupAvatarUrl)): ?>
+                                <img src="<?= e($activeGroupAvatarUrl) ?>" class="chat-header-avatar" alt="avatar">
+                            <?php else: ?>
+                                <span class="chat-header-avatar"><i class="bi bi-people-fill"></i></span>
+                            <?php endif; ?>
+                            <strong id="groupHeaderInfoTitle">
+                                <?= e($renderChatName($activeConv['display_name'] ?? null, $activeConv['name'] ?? null)) ?>
+                            </strong>
+                        </button>
+                        <span class="badge bg-secondary"><?= t('group_chat') ?></span>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-danger" id="chatLeaveGroupBtn" title="<?= e(t('leave_group')) ?>">
+                        <i class="bi bi-box-arrow-right"></i>
+                    </button>
                 <?php else: ?>
-                    <strong><?= e($activeConv['display_name'] ?? $activeConv['name'] ?? 'Chat') ?></strong>
+                    <div class="d-flex align-items-center gap-2">
+                        <button type="button" class="btn btn-sm btn-outline-secondary d-sm-none" id="chatBackBtn" title="<?= e(t('back')) ?>">
+                            <i class="bi bi-arrow-left"></i>
+                        </button>
+                        <?php $activeAvatarUrl = getAvatarUrl($activeConv['other_avatar'] ?? null, $activeConv['other_username'] ?? null); ?>
+                        <?php if (!empty($activeAvatarUrl)): ?>
+                            <img src="<?= e($activeAvatarUrl) ?>" class="chat-header-avatar" alt="avatar">
+                        <?php else: ?>
+                            <span class="chat-header-avatar"><i class="bi bi-person-circle"></i></span>
+                        <?php endif; ?>
+                        <strong><?= e($renderChatName($activeConv['display_name'] ?? null, $activeConv['name'] ?? null)) ?></strong>
+                        <?php if (!empty($activeConv['other_username'])): ?>
+                        <a href="/user/view_profile.php?user=<?= urlencode($activeConv['other_username']) ?>&back=<?= urlencode('/user/chat.php?conv=' . (int)$activeConvId) ?>" class="btn btn-sm btn-outline-secondary" title="<?= e(t('view_profile')) ?>">
+                            <i class="bi bi-person"></i>
+                        </a>
+                        <?php endif; ?>
+                    </div>
                 <?php endif; ?>
             </div>
             <div class="chat-messages" id="chatMessages">
                 <?php
-                $messages = getMessages($conn, $activeConvId, 0);
                 $lastDate = null;
-                foreach ($messages as $m):
+                foreach ($initialMessages as $m):
                     $isOwn = $m['fk_sender'] === $username;
+                    $isSystem = !empty($m['system_type']);
                     $msgDate = date('Y-m-d', strtotime($m['createdAt']));
                     $msgTime = date('H:i', strtotime($m['createdAt']));
                     if ($msgDate !== $lastDate):
@@ -139,9 +248,30 @@ $friends = getFriends($conn, $username);
                 ?>
                         <div class="chat-date-separator"><span><?= e($dateLabel) ?></span></div>
                     <?php endif; ?>
+                    <?php if ($isSystem): ?>
+                        <?php $systemText = $renderSystemText($m); ?>
+                        <?php if ($systemText !== ''): ?>
+                            <div class="chat-date-separator chat-system-message"><span><?= e($systemText) ?></span></div>
+                        <?php endif; ?>
+                        <?php continue; ?>
+                    <?php endif; ?>
                     <div class="chat-message <?= $isOwn ? 'own' : 'other' ?>">
                         <?php if (!$isOwn): ?>
-                            <small class="text-muted d-block mb-1"><?= e($m['firstName'] . ' ' . $m['lastName']) ?></small>
+                            <div class="d-flex align-items-center gap-2 mb-1">
+                                <?php $senderAvatarUrl = getAvatarUrl($m['avatar'] ?? null, $m['fk_sender'] ?? null); ?>
+                                <?php if (!empty($senderAvatarUrl)): ?>
+                                    <img src="<?= e($senderAvatarUrl) ?>" class="chat-msg-avatar" alt="avatar">
+                                <?php else: ?>
+                                    <i class="bi bi-person-circle text-muted"></i>
+                                <?php endif; ?>
+                                <?php
+                                $senderName = trim((string)($m['firstName'] ?? '') . ' ' . (string)($m['lastName'] ?? ''));
+                                if ($senderName === '') {
+                                    $senderName = trim((string)($m['fk_sender'] ?? '')) ?: t('unknown_user');
+                                }
+                                ?>
+                                <small class="text-muted d-block mb-0"><?= e($senderName) ?></small>
+                            </div>
                         <?php endif; ?>
                         <div class="bubble">
                             <?php if ($m['file_path']): ?>
@@ -202,6 +332,20 @@ $friends = getFriends($conn, $username);
             <div class="modal-body">
                 <div id="groupModalError" class="alert alert-danger d-none"></div>
                 <div class="mb-3">
+                    <label class="form-label mb-1"><?= t('group_avatar') ?></label>
+                    <div class="d-flex align-items-center gap-3">
+                        <div>
+                            <img id="newGroupAvatarPreview" src="" alt="Group avatar" class="chat-group-avatar-editor d-none">
+                            <span id="newGroupAvatarIcon" class="chat-group-avatar-editor"><i class="bi bi-people-fill"></i></span>
+                        </div>
+                        <div>
+                            <label class="btn btn-sm btn-outline-primary mb-1" for="newGroupAvatarInput"><?= t('avatar_upload_device') ?></label>
+                            <input type="file" id="newGroupAvatarInput" class="d-none" accept="<?= e(getAvatarUploadAcceptAttribute()) ?>">
+                            <button type="button" id="newGroupAvatarClearBtn" class="btn btn-sm btn-outline-danger mb-1 d-none"><?= t('clear') ?></button>
+                        </div>
+                    </div>
+                </div>
+                <div class="mb-3">
                     <label class="form-label"><?= t('group_name') ?></label>
                     <input type="text" id="groupName" class="form-control" required>
                 </div>
@@ -213,18 +357,7 @@ $friends = getFriends($conn, $username);
                     <label class="form-label"><?= t('add_member') ?></label>
                     <input type="text" id="newGroupMemberSearch" class="form-control form-control-sm mb-2" placeholder="<?= t('search_members') ?>">
                     <div id="newGroupMemberList" class="group-member-list mb-1">
-                        <?php foreach ($friends as $f): ?>
-                            <div class="group-member-item form-check">
-                                <input class="form-check-input group-member-check" type="checkbox" value="<?= e($f['pk_username']) ?>" id="m_<?= e($f['pk_username']) ?>">
-                                <label class="form-check-label" for="m_<?= e($f['pk_username']) ?>">
-                                    <?= e($f['firstName'] . ' ' . $f['lastName']) ?>
-                                    <small class="text-muted d-block">@<?= e($f['pk_username']) ?></small>
-                                </label>
-                            </div>
-                        <?php endforeach; ?>
-                        <?php if (empty($friends)): ?>
-                            <div class="text-muted small px-3 py-1"><?= t('no_friends') ?></div>
-                        <?php endif; ?>
+                        <div class="text-muted small px-3 py-1"><?= t('search_members') ?></div>
                     </div>
                 </div>
             </div>
@@ -246,10 +379,23 @@ $friends = getFriends($conn, $username);
             </div>
             <div class="modal-body">
                 <div id="groupInfoError" class="alert alert-danger d-none"></div>
-                <div id="groupInfoSuccess" class="alert alert-success d-none"></div>
+                <div class="mb-3">
+                    <label class="form-label mb-1"><?= t('group_avatar') ?></label>
+                    <div class="d-flex align-items-center gap-3">
+                        <div>
+                            <img id="groupInfoAvatarPreview" src="" alt="Group avatar" class="chat-group-avatar-editor d-none">
+                            <span id="groupInfoAvatarIcon" class="chat-group-avatar-editor"><i class="bi bi-people-fill"></i></span>
+                        </div>
+                        <div id="groupInfoAvatarEdit" class="d-none">
+                            <label class="btn btn-sm btn-outline-primary mb-1" for="groupInfoAvatarInput"><?= t('avatar_upload_device') ?></label>
+                            <input type="file" id="groupInfoAvatarInput" class="d-none" accept="<?= e(getAvatarUploadAcceptAttribute()) ?>">
+                            <button type="button" id="groupInfoAvatarClearBtn" class="btn btn-sm btn-outline-danger mb-1 d-none"><?= t('clear') ?></button>
+                        </div>
+                    </div>
+                </div>
                 <div class="mb-3">
                     <label class="form-label mb-0"><?= t('group_name') ?></label>
-                    <div id="groupInfoNameView" class="fw-semibold"></div>
+                    <div id="groupInfoNameView" class="mt-1"></div>
                     <div id="groupInfoNameEdit" class="d-none mt-1">
                         <input type="text" id="groupInfoNameInput" class="form-control form-control-sm">
                     </div>
@@ -261,7 +407,6 @@ $friends = getFriends($conn, $username);
                     <div id="groupInfoDescriptionEdit" class="d-none">
                         <textarea id="groupInfoDescriptionInput" class="form-control form-control-sm mb-1" rows="2"></textarea>
                     </div>
-                    <button type="button" id="groupInfoSaveBtn" class="btn btn-sm btn-primary"><?= t('save') ?></button>
                 </div>
                 <h6><?= t('members') ?></h6>
                 <ul id="groupInfoMembers" class="list-unstyled mb-3"></ul>
@@ -277,458 +422,32 @@ $friends = getFriends($conn, $username);
     </div>
 </div>
 
-<?php if ($activeConv): ?>
-    <script>
-        var chatLastMsgId = <?= !empty($messages) ? (int)end($messages)['pk_messageID'] : 0 ?>;
-        var chatConvId = <?= $activeConvId ?>;
-        var chatCurrentUser = <?= json_encode($username) ?>;
-        var chatIsGroup = <?= $activeConv['type'] === 'group' ? 'true' : 'false' ?>;
-    </script>
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            var chatSelectedFiles = [];
-            var cm = document.getElementById('chatMessages');
-            cm.scrollTop = cm.scrollHeight;
-
-            // Attachment preview with multiple files and per-file remove
-            function renderAttachmentPreview() {
-                var preview = $('#attachmentPreview');
-                preview.empty();
-                chatSelectedFiles.forEach(function(f, idx) {
-                    var pill = $('<span class="attachment-pill me-1 mb-1"></span>');
-                    pill.append($('<span></span>').text(f.name));
-                    var closeBtn = $('<button type="button" class="attachment-pill-close ms-1" aria-label="Remove">&times;</button>');
-                    closeBtn.on('click', function() {
-                        // remove only this file
-                        chatSelectedFiles.splice(idx, 1);
-                        renderAttachmentPreview();
-                    });
-                    pill.append(closeBtn);
-                    preview.append(pill);
-                });
-                if (!chatSelectedFiles.length) {
-                    preview.empty();
-                }
-            }
-
-            $('#chatFile').on('change', function() {
-                var files = Array.from(this.files || []);
-                if (files.length) {
-                    chatSelectedFiles = chatSelectedFiles.concat(files);
-                }
-                // clear input so same files can be selected again later
-                $('#chatFile').val('');
-                renderAttachmentPreview();
-            });
-
-            // Send message (multiple files + text)
-            $('#chatForm').on('submit', function(e) {
-                e.preventDefault();
-                var msg = $('#chatMsg').val().trim();
-
-                if (!msg && !chatSelectedFiles.length) return;
-
-                var formData = new FormData();
-                formData.append('action', 'send');
-                formData.append('conversation_id', chatConvId);
-                formData.append('message', msg);
-
-                chatSelectedFiles.forEach(function(f) {
-                    formData.append('files[]', f);
-                });
-
-                $.ajax({
-                    url: '/api/chat.php',
-                    type: 'POST',
-                    data: formData,
-                    processData: false,
-                    contentType: false,
-                    dataType: 'json',
-                    success: function(res) {
-                        if (res.success) {
-                            $('#chatMsg').val('');
-                            chatSelectedFiles = [];
-                            $('#chatFile').val('');
-                            $('#attachmentPreview').empty();
-                            loadNewMessages();
-                            if (res.errors && res.errors.length) {
-                                alert(res.errors.join('\n'));
-                            }
-                        } else if (res.message) {
-                            alert(res.message);
-                        }
-                    }
-                });
-            });
-
-            function timeFromDateStr(dateStr) {
-                if (!dateStr) return '';
-                // dateStr: "Y-m-d H:i:s" or "Y-m-d H:i"
-                var parts = dateStr.split(' ');
-                if (parts.length >= 2) return parts[1].substring(0, 5);
-                return '';
-            }
-
-            function appendMessage(m) {
-                //console.log('appendMessage called with', m);
-                var isOwn = m.fk_sender === chatCurrentUser;
-                var html = '<div class="chat-message ' + (isOwn ? 'own' : 'other') + '">';
-                if (!isOwn) html += '<small class="text-muted d-block mb-1">' + esc(m.firstName + ' ' + m.lastName) + '</small>';
-                html += '<div class="bubble">';
-                if (m.file_name) {
-                    var viewUrl     = '/download_chat_file.php?id=' + encodeURIComponent(m.pk_messageID) + '&mode=view';
-                    var downloadUrl = '/download_chat_file.php?id=' + encodeURIComponent(m.pk_messageID) + '&mode=download';
-                    html += '<div class="d-flex align-items-center justify-content-between">';
-                    html += '<a href="' + viewUrl + '" target="_blank" class="text-white text-truncate me-2">';
-                    html += '<i class="bi bi-file-earmark me-1"></i>' + esc(m.file_name) + '</a>';
-                    html += '<a href="' + downloadUrl + '" class="btn btn-sm btn-outline-light" download>';
-                    html += '<i class="bi bi-download"></i></a>';
-                    html += '</div>';
-                } else {
-                    html += esc(m.message || '');
-                }
-                html += '</div><small class="text-muted">' + esc(timeFromDateStr(m.createdAt)) + '</small></div>';
-                $('#chatMessages').append(html);
-                cm.scrollTop = cm.scrollHeight;
-            }
-
-            function loadNewMessages() {
-                $.get('/api/chat.php', {
-                    action: 'get_messages',
-                    conversation_id: chatConvId,
-                    since_id: chatLastMsgId
-                }, function(res) {
-                    //console.log('loadNewMessages -> response', res);
-                    if (res.success && res.messages.length) {
-                        res.messages.forEach(function(m) {
-                            appendMessage(m);
-                            chatLastMsgId = m.pk_messageID;
-                        });
-                    }
-                }, 'json');
-            }
-
-            setInterval(loadNewMessages, 3000);
-
-            // Group info modal
-            if (chatIsGroup) {
-
-                function loadGroupInfo(convId) {
-                    $('#groupInfoError').addClass('d-none');
-                    $('#groupInfoSuccess').addClass('d-none');
-                    $('#groupInfoMembers').empty();
-                    $('#groupInfoAddList').empty();
-                    $('#groupInfoMemberSearch').val('');
-
-                    $.get('/api/chat.php', {
-                        action: 'get_group_info',
-                        chat_id: convId
-                    }, function(res) {
-                        if (!res.success) {
-                            $('#groupInfoError').removeClass('d-none')
-                                .text(res.message || '<?= t('error_occurred') ?>');
-                            $('#groupInfoModal').modal('show');
-                            return;
-                        }
-                        var d = res.data;
-                        $('#groupInfoModalTitle').text(d.name || '<?= t('group_info') ?>');
-                        var isOwner = d.createdBy === chatCurrentUser;
-
-                        // Name
-                        $('#groupInfoNameView').text(d.name || '<?= t('group_info') ?>');
-                        $('#groupInfoNameInput').val(d.name || '');
-
-                        // Description
-                        if (isOwner) {
-                            $('#groupInfoNameEdit').removeClass('d-none');
-
-                            $('#groupInfoDescription').addClass('d-none');
-                            $('#groupInfoDescriptionEdit').removeClass('d-none');
-                            $('#groupInfoDescriptionInput').val(d.description || '');
-                        } else {
-                            $('#groupInfoNameEdit').addClass('d-none');
-
-                            $('#groupInfoDescription').removeClass('d-none').text(d.description || '');
-                            $('#groupInfoDescriptionEdit').addClass('d-none');
-                        }
-
-                        // Members list
-                        var ul = $('#groupInfoMembers');
-                        if (d.members && d.members.length) {
-                            $.each(d.members, function(i, m) {
-                                var badge = m.role === 'owner' ?
-                                    ' <span class="badge bg-secondary ms-1"><?= t('group_owner') ?></span>' :
-                                    '';
-                                var removeBtn = '';
-                                if (isOwner && m.role !== 'owner') {
-                                    removeBtn =
-                                        ' <button type="button" class="btn btn-sm btn-outline-danger group-remove-member ms-1 py-0 px-1" ' +
-                                        'data-username="' + esc(m.pk_username) + '" ' +
-                                        'title="<?= t('remove_member') ?>">&times;</button>';
-                                }
-                                ul.append(
-                                    '<li class="py-1 d-flex align-items-center">' +
-                                    '<span><i class="bi bi-person me-1"></i>' +
-                                    esc(m.firstName + ' ' + m.lastName + ' (@' + m.pk_username + ')') +
-                                    badge +
-                                    '</span>' +
-                                    removeBtn +
-                                    '</li>'
-                                );
-                            });
-                        } else {
-                            ul.append('<li class="text-muted small"><?= t('no_members_yet') ?></li>');
-                        }
-
-                        // Add members section (only if owner)
-                        if (isOwner) {
-                            $('#groupInfoAddDivider').removeClass('d-none');
-                            $('#groupInfoAddSection').removeClass('d-none');
-                            var addList = $('#groupInfoAddList');
-                            addList.empty();
-                            if (d.addable_friends && d.addable_friends.length) {
-                                $.each(d.addable_friends, function(i, f) {
-                                    var id = 'gaf_' + f.pk_username;
-                                    addList.append(
-                                        '<div class="form-check group-member-item px-3 py-1">' +
-                                        '<input class="form-check-input group-member-check" type="checkbox" ' +
-                                        'value="' + esc(f.pk_username) + '" id="' + esc(id) + '">' +
-                                        '<label class="form-check-label" for="' + esc(id) + '">' +
-                                        esc(f.firstName + ' ' + f.lastName) +
-                                        ' <small class="text-muted d-block">@' + esc(f.pk_username) + '</small>' +
-                                        '</label>' +
-                                        '</div>'
-                                    );
-                                });
-                            } else {
-                                addList.append('<div class="text-muted small px-3 py-1"><?= t('no_friends_to_add') ?></div>');
-                            }
-                        } else {
-                            $('#groupInfoAddDivider').addClass('d-none');
-                            $('#groupInfoAddSection').addClass('d-none');
-                        }
-
-                        $('#groupInfoModal').modal('show');
-                    }, 'json').fail(function() {
-                        $('#groupInfoError').removeClass('d-none')
-                            .text('<?= t('error_occurred') ?>');
-                        $('#groupInfoModal').modal('show');
-                    });
-                }
-
-                // Open modal
-                $('#groupTitleLink').on('click', function() {
-                    var convId = $(this).data('conv-id');
-                    loadGroupInfo(convId);
-                });
-
-                // Member search filter (keep your current logic but use .group-member-item)
-                $('#groupInfoMemberSearch').on('input', function() {
-                    var q = $(this).val().toLowerCase();
-                    $('#groupInfoAddList .group-member-item').each(function() {
-                        var text = $(this).text().toLowerCase();
-                        $(this).toggle(text.indexOf(q) !== -1);
-                    });
-                });
-
-                // Add members submit
-                $('#groupInfoAddBtn').on('click', function() {
-                    var selected = [];
-                    $('#groupInfoAddList .group-member-check:checked').each(function() {
-                        selected.push($(this).val());
-                    });
-                    if (!selected.length) return;
-
-                    $.post('/api/chat.php', {
-                        action: 'add_group_members',
-                        chat_id: chatConvId,
-                        'members[]': selected
-                    }, function(res) {
-                        if (res.success) {
-                            $('#groupInfoSuccess').removeClass('d-none')
-                                .text('<?= t('add_members_success') ?>');
-                            $('#groupInfoError').addClass('d-none');
-                            // re-load full info so names, roles, and ordering are correct
-                            loadGroupInfo(chatConvId);
-                        } else {
-                            $('#groupInfoError').removeClass('d-none')
-                                .text(res.message || '<?= t('error_occurred') ?>');
-                            $('#groupInfoSuccess').addClass('d-none');
-                        }
-                    }, 'json').fail(function() {
-                        $('#groupInfoError').removeClass('d-none')
-                            .text('<?= t('error_occurred') ?>');
-                    });
-                });
-                // Save group name + description (owner only)
-                $('#groupInfoSaveBtn').on('click', function() {
-                    var name = $('#groupInfoNameInput').val().trim();
-                    var desc = $('#groupInfoDescriptionInput').val();
-
-                    $.post('/api/chat.php', {
-                        action: 'update_group',
-                        chat_id: chatConvId,
-                        name: name,
-                        description: desc
-                    }, function(res) {
-                        if (res.success) {
-                            $('#groupInfoSuccess').removeClass('d-none').text('<?= t('success') ?>');
-                            $('#groupInfoError').addClass('d-none');
-
-                            if (res.data && res.data.name !== undefined) {
-                                var newName = res.data.name || '<?= t('group_info') ?>';
-                                $('#groupInfoNameView').text(newName);
-                                $('#groupInfoNameInput').val(newName);
-                                $('#groupTitleLink').text(newName);
-                            }
-                            if (res.data && res.data.description !== undefined) {
-                                var newDesc = res.data.description || '';
-                                $('#groupInfoDescription').text(newDesc);
-                                $('#groupInfoDescriptionInput').val(newDesc);
-                            }
-                        } else {
-                            $('#groupInfoError').removeClass('d-none').text(res.message || '<?= t('error_occurred') ?>');
-                            $('#groupInfoSuccess').addClass('d-none');
-                        }
-                    }, 'json').fail(function() {
-                        $('#groupInfoError').removeClass('d-none').text('<?= t('error_occurred') ?>');
-                    });
-                })
-
-                // Remove group member
-                $(document).on('click', '.group-remove-member', function() {
-                    var username = $(this).data('username');
-                    if (!username) return;
-                    if (!confirm('<?= t('confirm_remove_member') ?>')) return;
-
-                    $.post('/api/chat.php', {
-                        action: 'remove_group_member',
-                        chat_id: chatConvId,
-                        member_username: username
-                    }, function(res) {
-                        if (res.success) {
-                            $('#groupInfoSuccess').removeClass('d-none')
-                                .text('<?= t('member_removed') ?>');
-                            $('#groupInfoError').addClass('d-none');
-                            // re-load full info so lists stay in sync
-                            loadGroupInfo(chatConvId);
-                        } else {
-                            $('#groupInfoError').removeClass('d-none')
-                                .text(res.message || '<?= t('error_occurred') ?>');
-                            $('#groupInfoSuccess').addClass('d-none');
-                        }
-                    }, 'json').fail(function() {
-                        $('#groupInfoError').removeClass('d-none')
-                            .text('<?= t('error_occurred') ?>');
-                    });
-                });
-            }
-        });
-    </script>
-<?php endif; ?>
-
 <script>
-    function esc(str) {
-        return $('<div>').text(str).html();
-    }
-    document.addEventListener('DOMContentLoaded', function() {
-        // User search
-        var searchTimer;
-        $('#userSearch').on('input', function() {
-            clearTimeout(searchTimer);
-            var q = $(this).val().trim();
-            if (q.length < 2) {
-                $('#searchResults').addClass('d-none').html('');
-                return;
-            }
-            searchTimer = setTimeout(function() {
-                $.get('/api/chat.php', {
-                    action: 'search_users',
-                    query: q
-                }, function(res) {
-                    if (!res.success || !res.users.length) {
-                        $('#searchResults').addClass('d-none').html('');
-                        return;
-                    }
-                    var html = '';
-                    $.each(res.users, function(i, u) {
-                        html += '<div class="chat-search-item" data-username="' + esc(u.pk_username) + '">' +
-                            '<i class="bi bi-person me-1"></i>' + esc(u.firstName + ' ' + u.lastName) +
-                            ' <small class="text-muted">@' + esc(u.pk_username) + '</small></div>';
-                    });
-                    $('#searchResults').removeClass('d-none').html(html);
-                }, 'json').fail(function() {});
-            }, 300);
-        });
-
-        $(document).on('click', '.chat-search-item', function() {
-            var otherUser = $(this).data('username');
-            $('#userSearch').val('');
-            $('#searchResults').addClass('d-none').html('');
-            $.post('/api/chat.php', {
-                action: 'create_private_chat',
-                with_user: otherUser
-            }, function(res) {
-                if (res.success) {
-                    window.location.href = '/user/chat.php?conv=' + res.conversation_id;
-                } else {
-                    alert(res.message || '<?= t('error_occurred') ?>');
-                }
-            }, 'json').fail(function() {
-                alert('<?= t('error_occurred') ?>');
-            });
-        });
-
-        // New Group member search filter
-        $('#newGroupMemberSearch').on('input', function() {
-            var q = $(this).val().toLowerCase();
-            $('#newGroupMemberList .group-member-item').each(function() {
-                var label = $(this).find('label').text().toLowerCase();
-                $(this).toggle(label.indexOf(q) !== -1);
-            });
-        });
-
-        // Create group via AJAX
-        $('#createGroupBtn').on('click', function() {
-            var name = $('#groupName').val().trim();
-            var description = $('#groupDescription').val().trim();
-            var members = [];
-            $('.group-member-check:checked').each(function() {
-                members.push($(this).val());
-            });
-            if (!name) {
-                $('#groupModalError').removeClass('d-none').text('<?= t('group_name_required') ?>');
-                return;
-            }
-            if (members.length < 2) {
-                $('#groupModalError').removeClass('d-none').text('<?= t('select_min_2_members') ?>');
-                return;
-            }
-            $('#groupModalError').addClass('d-none');
-            $.post('/api/chat.php', {
-                action: 'create_group_chat',
-                group_name: name,
-                group_description: description,
-                'members[]': members
-            }, function(res) {
-                if (res.success) {
-                    window.location.href = '/user/chat.php?conv=' + res.conversation_id;
-                } else {
-                    $('#groupModalError').removeClass('d-none').text(res.message || '<?= t('error_occurred') ?>');
-                }
-            }, 'json').fail(function() {
-                $('#groupModalError').removeClass('d-none').text('<?= t('error_occurred') ?>');
-            });
-        });
-
-        $('#newGroupModal').on('hidden.bs.modal', function() {
-            $('#groupName').val('');
-            $('#groupDescription').val('');
-            $('.group-member-check').prop('checked', false);
-            $('#newGroupMemberSearch').val('');
-            $('#newGroupMemberList .group-member-item').show();
-            $('#groupModalError').addClass('d-none');
-        });
-    });
+    window.chatPageData = {
+        currentUser: <?= json_encode($username) ?>,
+        activeConvId: <?= (int)$activeConvId ?>,
+        initialLastMsgId: <?= !empty($initialMessages) ? (int)end($initialMessages)['pk_messageID'] : 0 ?>,
+        i18n: {
+            viewProfileTitle: <?= json_encode(t('view_profile')) ?>,
+            errorText: <?= json_encode(t('error_occurred')) ?>,
+            noConversationsText: <?= json_encode(t('no_conversations')) ?>,
+            groupChatText: <?= json_encode(t('group_chat')) ?>,
+            typeMessageText: <?= json_encode(t('type_message')) ?>,
+            uploadFileText: <?= json_encode(t('upload_file')) ?>,
+            backText: <?= json_encode(t('back')) ?>,
+            groupInfoText: <?= json_encode(t('group_info')) ?>,
+            groupOwnerText: <?= json_encode(t('group_owner')) ?>,
+            removeMemberText: <?= json_encode(t('remove_member')) ?>,
+            noMembersYetText: <?= json_encode(t('no_members_yet')) ?>,
+            noFriendsToAddText: <?= json_encode(t('no_friends_to_add')) ?>,
+            confirmRemoveMemberText: <?= json_encode(t('confirm_remove_member')) ?>,
+            groupNameRequiredText: <?= json_encode(t('group_name_required')) ?>,
+            unknownUserText: <?= json_encode(t('unknown_user')) ?>,
+            leaveGroupText: <?= json_encode(t('leave_group')) ?>,
+            confirmLeaveGroupText: <?= json_encode(t('confirm_leave_group')) ?>,
+            groupLeftNoticeText: <?= json_encode(t('group_left_notice')) ?>,
+            groupJoinedNoticeText: <?= json_encode(t('group_joined_notice')) ?>
+        }
+    };
 </script>
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>

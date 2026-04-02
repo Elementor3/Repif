@@ -1,0 +1,122 @@
+/* Profile page: avatar section */
+.avatar-grid {
+	display: grid;
+	grid-template-columns: repeat(4, 1fr);
+	gap: 0.5rem;
+}
+
+@media (min-width: 992px) {
+	.avatar-grid {
+		grid-template-columns: repeat(8, 1fr);
+	}
+}
+
+.avatar-option {
+	cursor: pointer;
+	appearance: none;
+	background: transparent;
+	padding: 0;
+	border: 6px solid transparent;
+	border-radius: 50%;
+	transition: border-color 0.15s;
+	aspect-ratio: 1;
+	overflow: hidden;
+}
+
+.avatar-option:hover,
+.avatar-option.selected {
+	border-color: #0d6efd;
+}
+
+.avatar-option img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+.avatar-preview-wrap {
+	width: 168px;
+	height: 168px;
+	border-radius: 50%;
+	overflow: visible;
+	border: 4px solid var(--bs-border-color);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: var(--bs-body-bg);
+	margin: 0 auto;
+	position: relative;
+}
+
+@media (min-width: 992px) {
+	.avatar-preview-wrap {
+		width: 220px;
+		height: 220px;
+	}
+}
+
+.avatar-preview-image {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	border-radius: 50%;
+}
+
+.avatar-preview-icon {
+	font-size: 7rem;
+	color: var(--bs-secondary-color);
+}
+
+.avatar-upload-row {
+	text-align: center;
+	margin-top: 1rem;
+}
+
+.avatar-or-label {
+	margin-bottom: 1rem;
+}
+
+.avatar-save-wrap {
+	margin-top: 0.5rem;
+}
+
+@media (min-width: 992px) {
+	.avatar-save-wrap {
+		text-align: left;
+	}
+}
+
+.avatar-clear-btn {
+	position: absolute;
+	top: -8px;
+	right: -8px;
+	width: 30px;
+	height: 30px;
+	border: none;
+	border-radius: 50%;
+	background: rgba(0, 0, 0, 0.6);
+	color: #fff;
+	font-size: 1.25rem;
+	line-height: 1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+}
+
+.avatar-clear-btn:hover {
+	background: rgba(220, 53, 69, 0.9);
+}
+
+.profile-flash-container {
+	position: fixed;
+	top: 78px;
+	left: 50%;
+	transform: translateX(-50%);
+	width: min(820px, calc(100% - 2rem));
+	z-index: 1060;
+}
+
+.profile-flash-container .alert {
+	margin-bottom: 0.75rem;
+}

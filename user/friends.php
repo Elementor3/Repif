@@ -101,7 +101,7 @@ $outgoingRequests = array_values(array_filter($pendingRequests, function ($r) {
                     <div class="list-group-item d-flex justify-content-between align-items-center" data-friend-username="<?= e($f['pk_username']) ?>">
                         <div class="d-flex align-items-center gap-2">
                             <?php if ($f['avatar'] ?? ''): ?>
-                            <img src="/assets/avatars/presets/<?= e($f['avatar']) ?>" class="rounded-circle" width="36" height="36">
+                            <img src="<?= e(getAvatarUrl($f['avatar'], $f['pk_username']) ?? '') ?>" class="rounded-circle" width="36" height="36">
                             <?php else: ?>
                             <i class="bi bi-person-circle fs-3"></i>
                             <?php endif; ?>
@@ -111,7 +111,7 @@ $outgoingRequests = array_values(array_filter($pendingRequests, function ($r) {
                             </div>
                         </div>
                         <div class="d-flex gap-1">
-                            <a href="/user/view_profile.php?user=<?= urlencode($f['pk_username']) ?>" class="btn btn-sm btn-outline-secondary">
+                            <a href="/user/view_profile.php?user=<?= urlencode($f['pk_username']) ?>&back=<?= urlencode('/user/friends.php') ?>" class="btn btn-sm btn-outline-secondary">
                                 <i class="bi bi-person"></i>
                             </a>
                             <a href="/user/chat.php?with=<?= urlencode($f['pk_username']) ?>" class="btn btn-sm btn-outline-primary">
@@ -139,7 +139,7 @@ $outgoingRequests = array_values(array_filter($pendingRequests, function ($r) {
                     <div class="d-flex align-items-center gap-2 py-2 border-bottom" data-request-id="<?= (int)$r['pk_requestID'] ?>">
                         <div>
                             <?php if (!empty($r['avatar'])): ?>
-                            <img src="/assets/avatars/presets/<?= e($r['avatar']) ?>" class="rounded-circle" width="36" height="36" alt="avatar">
+                            <img src="<?= e(getAvatarUrl($r['avatar'], $r['pk_username']) ?? '') ?>" class="rounded-circle" width="36" height="36" alt="avatar">
                             <?php else: ?>
                             <i class="bi bi-person-circle fs-3"></i>
                             <?php endif; ?>
@@ -150,7 +150,7 @@ $outgoingRequests = array_values(array_filter($pendingRequests, function ($r) {
                             <small class="text-muted"><?= e(date('d.m.Y H:i', strtotime($r['createdAt']))) ?></small>
                         </div>
                         <div class="d-flex align-items-center gap-1">
-                            <a href="/user/view_profile.php?user=<?= urlencode($r['pk_username']) ?>" class="btn btn-sm btn-outline-secondary" title="<?= e(t('view_profile')) ?>">
+                            <a href="/user/view_profile.php?user=<?= urlencode($r['pk_username']) ?>&back=<?= urlencode('/user/friends.php') ?>" class="btn btn-sm btn-outline-secondary" title="<?= e(t('view_profile')) ?>">
                                 <i class="bi bi-person"></i>
                             </a>
                             <button type="button" class="btn btn-sm btn-outline-success js-incoming-action" data-action="accept" data-request-id="<?= (int)$r['pk_requestID'] ?>" title="<?= e(t('accept')) ?>">
@@ -171,7 +171,7 @@ $outgoingRequests = array_values(array_filter($pendingRequests, function ($r) {
                     <div class="d-flex align-items-center gap-2 py-2 border-bottom" data-request-id="<?= (int)$r['pk_requestID'] ?>" data-outgoing-username="<?= e($r['pk_username']) ?>">
                         <div>
                             <?php if (!empty($r['avatar'])): ?>
-                            <img src="/assets/avatars/presets/<?= e($r['avatar']) ?>" class="rounded-circle" width="36" height="36" alt="avatar">
+                            <img src="<?= e(getAvatarUrl($r['avatar'], $r['pk_username']) ?? '') ?>" class="rounded-circle" width="36" height="36" alt="avatar">
                             <?php else: ?>
                             <i class="bi bi-person-circle fs-3"></i>
                             <?php endif; ?>
@@ -182,7 +182,7 @@ $outgoingRequests = array_values(array_filter($pendingRequests, function ($r) {
                             <small class="text-muted"><?= e(date('d.m.Y H:i', strtotime($r['createdAt']))) ?></small>
                         </div>
                         <div class="d-flex align-items-center gap-1">
-                            <a href="/user/view_profile.php?user=<?= urlencode($r['pk_username']) ?>" class="btn btn-sm btn-outline-secondary" title="<?= e(t('view_profile')) ?>">
+                            <a href="/user/view_profile.php?user=<?= urlencode($r['pk_username']) ?>&back=<?= urlencode('/user/friends.php') ?>" class="btn btn-sm btn-outline-secondary" title="<?= e(t('view_profile')) ?>">
                                 <i class="bi bi-person"></i>
                             </a>
                             <button type="button" class="btn btn-sm btn-outline-danger js-cancel-request" data-request-id="<?= (int)$r['pk_requestID'] ?>" title="<?= e(t('cancel')) ?>">

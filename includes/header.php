@@ -3,12 +3,15 @@ require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/i18n.php';
 require_once __DIR__ . '/../services/notifications.php';
+require_once __DIR__ . '/../services/chat.php';
 
 $theme = $_SESSION['theme'] ?? 'light';
 $locale = $_SESSION['locale'] ?? 'en';
 $unreadCount = 0;
+$chatUnreadCount = 0;
 if (isLoggedIn()) {
     $unreadCount = getUnreadCount($conn, $_SESSION['username']);
+    $chatUnreadCount = getTotalUnreadChatCount($conn, $_SESSION['username']);
 }
 $currentPage = basename($_SERVER['PHP_SELF']);
 ?>
@@ -22,6 +25,15 @@ $currentPage = basename($_SERVER['PHP_SELF']);
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.min.css">
     <link rel="stylesheet" href="/assets/css/style.css">
+    <?php if ($currentPage === 'profile.php'): ?>
+    <link rel="stylesheet" href="/assets/css/profile.css">
+    <?php endif; ?>
+    <?php if ($currentPage === 'friends.php'): ?>
+    <link rel="stylesheet" href="/assets/css/friends.css">
+    <?php endif; ?>
+    <?php if ($currentPage === 'chat.php'): ?>
+    <link rel="stylesheet" href="/assets/css/chat.css">
+    <?php endif; ?>
 </head>
 
 <body>
@@ -30,11 +42,11 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             <?php if (isLoggedIn()): ?>
                 <a class="navbar-brand fw-semibold d-flex align-items-center text-nowrap me-1" href="/user/profile.php">
                     <?php if (!empty($_SESSION['avatar'])): ?>
-                        <img src="/assets/avatars/presets/<?= e($_SESSION['avatar']) ?>" class="rounded-circle me-1" width="32" height="32" alt="avatar">
+                        <img src="<?= e(getAvatarUrl($_SESSION['avatar'], $_SESSION['username']) ?? '') ?>" class="rounded-circle me-1" width="32" height="32" alt="avatar">
                     <?php else: ?>
                         <i class="bi bi-person-circle fs-4 me-1"></i>
                     <?php endif; ?>
-                    <span><?= e($_SESSION['full_name'] ?? $_SESSION['username']) ?></span>
+                    <span class="text-truncate"><?= e($_SESSION['full_name'] ?? $_SESSION['username']) ?></span>
                 </a>
                 <div class="collapse navbar-collapse justify-content-center" id="navbarMain">
                     <ul class="navbar-nav">
@@ -66,6 +78,9 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                         <li class="nav-item">
                             <a class="nav-link <?= $currentPage === 'chat.php' ? 'active' : '' ?>" href="/user/chat.php">
                                 <i class="bi bi-chat-dots"></i> <?= t('chat') ?>
+                                <span class="badge bg-danger rounded-pill ms-1 chat-total-badge <?= $chatUnreadCount > 0 ? '' : 'd-none' ?>" id="chatUnreadBadge">
+                                    <?= (int)$chatUnreadCount ?>
+                                </span>
                             </a>
                         </li>
                         <?php if (isAdmin()): ?>
@@ -141,7 +156,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             <?php endif; ?>
         </div>
     </nav>
-    <div class="container mt-5 pt-3">
+    <div class="container mt-2 pt-0">
         <div class="modal fade" id="notifDetailModal" tabindex="-1" aria-labelledby="notifDetailModalLabel" aria-hidden="true">
             <div class="modal-dialog modal-dialog-scrollable">
                 <div class="modal-content">

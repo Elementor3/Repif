@@ -8,22 +8,29 @@ $(function () {
     $('#themeToggleBtn').on('click', function () {
         var current = $('html').attr('data-bs-theme');
         var next = current === 'dark' ? 'light' : 'dark';
+        var $themeIcon = $('#themeIcon');
 
         // Apply theme instantly in UI, then persist preference on backend.
         $('html').attr('data-bs-theme', next);
         var iconClass = next === 'dark' ? 'bi-sun-fill' : 'bi-moon-fill';
-        $('#themeIcon').removeClass('bi-sun-fill bi-moon-fill').addClass(iconClass);
+        if ($themeIcon.length) {
+            $themeIcon.removeClass('bi-sun-fill bi-moon-fill').addClass(iconClass);
+        }
 
         $.post('/api/profile.php', { action: 'set_theme', theme: next }, function (res) {
             if (!res || !res.success) {
                 $('html').attr('data-bs-theme', current);
                 var oldIconClass = current === 'dark' ? 'bi-sun-fill' : 'bi-moon-fill';
-                $('#themeIcon').removeClass('bi-sun-fill bi-moon-fill').addClass(oldIconClass);
+                if ($themeIcon.length) {
+                    $themeIcon.removeClass('bi-sun-fill bi-moon-fill').addClass(oldIconClass);
+                }
             }
         }, 'json').fail(function () {
             $('html').attr('data-bs-theme', current);
             var oldIconClass = current === 'dark' ? 'bi-sun-fill' : 'bi-moon-fill';
-            $('#themeIcon').removeClass('bi-sun-fill bi-moon-fill').addClass(oldIconClass);
+            if ($themeIcon.length) {
+                $themeIcon.removeClass('bi-sun-fill bi-moon-fill').addClass(oldIconClass);
+            }
         });
     });
 
@@ -58,6 +65,21 @@ $(function () {
     function renderEmptyNotifications() {
         var emptyMsg = $('#notifList').data('empty-msg') || 'No notifications';
         $('#notifList').html('<div class="text-center text-muted py-3"></div>').find('div').text(emptyMsg);
+    }
+
+    function loadChatUnreadBadge() {
+        if (!$('#chatUnreadBadge').length) return;
+
+        $.get('/api/chat.php', { action: 'get_unread_counts' }, function (res) {
+            if (!res || !res.success) return;
+
+            var total = parseInt(res.total || 0, 10);
+            if (total > 0) {
+                $('#chatUnreadBadge').text(total).removeClass('d-none');
+            } else {
+                $('#chatUnreadBadge').text('0').addClass('d-none');
+            }
+        }, 'json').fail(function () { });
     }
 
     function loadNotificationList() {
@@ -168,6 +190,11 @@ $(function () {
                 alert($('#notifList').data('delete-error-msg') || 'Failed to delete notification');
             });
         });
+    }
+
+    if ($('#chatUnreadBadge').length) {
+        loadChatUnreadBadge();
+        setInterval(loadChatUnreadBadge, 3000);
     }
 
     // Global AJAX error handler
