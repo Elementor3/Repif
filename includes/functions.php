@@ -49,4 +49,33 @@ function showError(string $message): string {
         . '<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
 }
 
+function getAllowedAvatarExtensions(): array {
+    return ['webp', 'png', 'jpg', 'jpeg', 'avif'];
+}
+
+function getPresetAvatarFiles(?string $presetsDir = null): array {
+    $presetsDir = $presetsDir ?? (__DIR__ . '/../assets/avatars/presets');
+    if (!is_dir($presetsDir)) {
+        return [];
+    }
+
+    $allowedExt = array_map('strtolower', getAllowedAvatarExtensions());
+    $avatars = [];
+
+    foreach (scandir($presetsDir) ?: [] as $file) {
+        $fullPath = $presetsDir . DIRECTORY_SEPARATOR . $file;
+        if (!is_file($fullPath)) {
+            continue;
+        }
+
+        $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+        if ($ext !== '' && in_array($ext, $allowedExt, true)) {
+            $avatars[] = $file;
+        }
+    }
+
+    natcasesort($avatars);
+    return array_values($avatars);
+}
+
 ?>

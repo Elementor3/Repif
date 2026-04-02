@@ -9,6 +9,7 @@ requireLogin();
 
 $username = $_SESSION['username'];
 $user = getUserByUsername($conn, $username);
+$availableAvatars = getPresetAvatarFiles();
 $msg = '';
 $err = '';
 $emailChangeNotice = '';
@@ -132,12 +133,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     } elseif ($action === 'set_avatar') {
         $avatar = $_POST['avatar'] ?? '';
-        $allowed = [];
-        for ($i = 1; $i <= 12; $i++) $allowed[] = "avatar_$i.svg";
-        if (in_array($avatar, $allowed)) {
+        if (in_array($avatar, $availableAvatars, true)) {
             updateUserAvatar($conn, $username, $avatar);
             $_SESSION['avatar'] = $avatar;
             $msg = t('success');
+            $user = getUserByUsername($conn, $username);
+        } else {
+            $err = t('error_occurred');
         }
     }
 }
@@ -146,7 +148,6 @@ require_once __DIR__ . '/../includes/header.php';
 ?>
 <h2 class="mb-4"><i class="bi bi-person-circle me-2"></i><?= t('profile') ?></h2>
 
-<?php if ($msg): ?><?= showSuccess($msg) ?><?php endif; ?>
 <?php if ($err): ?><?= showError($err) ?><?php endif; ?>
 <?php if ($emailChangeNotice): ?><?= showError($emailChangeNotice) ?><?php endif; ?>
 
@@ -261,12 +262,12 @@ require_once __DIR__ . '/../includes/header.php';
                     <input type="hidden" name="action" value="set_avatar">
                     <input type="hidden" name="avatar" id="selectedAvatar" value="">
                     <div class="avatar-grid mb-3">
-                        <?php for ($i = 1; $i <= 12; $i++): ?>
-                        <div class="avatar-option <?= ($user['avatar'] ?? '') === "avatar_$i.svg" ? 'selected' : '' ?>"
-                             data-avatar="avatar_<?= $i ?>.svg" onclick="selectAvatar(this)">
-                            <img src="/assets/avatars/presets/avatar_<?= $i ?>.svg" alt="Avatar <?= $i ?>">
+                        <?php foreach ($availableAvatars as $avatarFile): ?>
+                        <div class="avatar-option <?= ($user['avatar'] ?? '') === $avatarFile ? 'selected' : '' ?>"
+                             data-avatar="<?= e($avatarFile) ?>" onclick="selectAvatar(this)">
+                            <img src="/assets/avatars/presets/<?= e($avatarFile) ?>" alt="Avatar">
                         </div>
-                        <?php endfor; ?>
+                        <?php endforeach; ?>
                     </div>
                     <button type="submit" class="btn btn-primary"><?= t('save') ?></button>
                 </form>

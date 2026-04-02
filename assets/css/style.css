@@ -283,12 +283,19 @@ body {
 /* Avatar grid */
 .avatar-grid {
     display: grid;
-    grid-template-columns: repeat(6, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 0.5rem;
 }
+
+@media (min-width: 992px) {
+    .avatar-grid {
+        grid-template-columns: repeat(8, 1fr);
+    }
+}
+
 .avatar-option {
     cursor: pointer;
-    border: 3px solid transparent;
+    border: 6px solid transparent;
     border-radius: 50%;
     transition: border-color 0.15s;
     aspect-ratio: 1;
