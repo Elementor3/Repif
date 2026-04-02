@@ -10,6 +10,8 @@ if (!isLoggedIn()) {
 
 $username = $_SESSION['username'];
 $action = $_POST['action'] ?? '';
+$isAjaxRequest = strtolower((string)($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '')) === 'xmlhttprequest'
+    || stripos((string)($_SERVER['HTTP_ACCEPT'] ?? ''), 'application/json') !== false;
 
 if ($action === 'set_locale') {
     $locale = $_POST['locale'] ?? 'en';
@@ -18,8 +20,13 @@ if ($action === 'set_locale') {
     $_SESSION['locale'] = $locale;
     updateUserLocale($conn, $username, $locale);
 
-    $ref = $_SERVER['HTTP_REFERER'] ?? '/user/dashboard.php';
-    header('Location: ' . $ref);
+    if ($isAjaxRequest) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => true, 'message' => 'OK', 'locale' => $locale]);
+    } else {
+        $ref = $_SERVER['HTTP_REFERER'] ?? '/user/dashboard.php';
+        header('Location: ' . $ref);
+    }
     exit;
 
 } elseif ($action === 'set_theme') {
@@ -27,7 +34,7 @@ if ($action === 'set_locale') {
     if (!in_array($theme, ['light', 'dark'])) $theme = 'light';
     $_SESSION['theme'] = $theme;
     updateUserTheme($conn, $username, $theme);
-    if (!empty($_SERVER['HTTP_X_REQUESTED_WITH'])) {
+    if ($isAjaxRequest) {
         header('Content-Type: application/json');
         echo json_encode(['success' => true]);
     } else {

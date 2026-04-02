@@ -4,11 +4,6 @@ require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../services/chat.php';
 require_once __DIR__ . '/../includes/i18n.php';
 
-// Chat file upload configuration
-$CHAT_ALLOWED_EXT = ['jpg','jpeg','png','csv','pdf','txt','doc','docx','zip'];
-$CHAT_MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB per file
-$CHAT_MAX_FILES_PER_MESSAGE = 5;        // max files per send
-
 header('Content-Type: application/json');
 
 if (!isLoggedIn()) {
@@ -24,6 +19,7 @@ if ($action === 'send') {
     $convId  = (int)($_POST['conversation_id'] ?? 0);
     $message = trim($_POST['message'] ?? '');
     $files   = $_FILES['files'] ?? null;
+    $chatUploadConfig = getChatUploadConfig();
 
     if (!$convId) {
         echo json_encode(['success' => false, 'message' => t('invalid_request')]);
@@ -43,7 +39,7 @@ if ($action === 'send') {
     if ($files && isset($files['tmp_name']) && is_array($files['tmp_name'])) {
         $count = count($files['tmp_name']);
 
-        if ($count > $CHAT_MAX_FILES_PER_MESSAGE) {
+        if ($count > (int)$chatUploadConfig['max_files_per_message']) {
             echo json_encode(['success' => false, 'message' => t('too_many_files')]);
             exit;
         }
@@ -55,30 +51,32 @@ if ($action === 'send') {
 
             $tmpName  = $files['tmp_name'][$i];
             $origName = $files['name'][$i];
-            $size     = $files['size'][$i];
+            $fileData = [
+                'name' => $origName,
+                'tmp_name' => $tmpName,
+                'size' => (int)($files['size'][$i] ?? 0),
+                'error' => (int)($files['error'][$i] ?? UPLOAD_ERR_NO_FILE),
+            ];
 
-            $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
-
-            if (!in_array($ext, $CHAT_ALLOWED_EXT, true)) {
-                $fileErrors[] = t('file_type_not_allowed') . ': ' . $origName;
+            $validation = validateUploadedFile(
+                $fileData,
+                (array)$chatUploadConfig['allowed_ext'],
+                (array)$chatUploadConfig['allowed_mimes'],
+                (int)$chatUploadConfig['max_file_size']
+            );
+            if (empty($validation['ok'])) {
+                $fileErrors[] = t((string)$validation['message_key']) . ': ' . $origName;
                 continue;
             }
 
-            if ($size > $CHAT_MAX_FILE_SIZE) {
-                $fileErrors[] = t('file_too_large') . ': ' . $origName;
-                continue;
-            }
-
-            $newName = uniqid('chat_', true) . '.' . $ext;
-            $dest    = __DIR__ . '/../uploads/chat/' . $newName;
-
-            if (!move_uploaded_file($tmpName, $dest)) {
+            $newName = uniqid('chat_', true) . '.' . $validation['ext'];
+            if (!saveUploadedFile($fileData, getChatUploadsDir(), $newName)) {
                 $fileErrors[] = t('file_upload_failed') . ': ' . $origName;
                 continue;
             }
 
             // Отдельное сообщение только с файлом
-            $msgId = sendMessage($conn, $convId, $username, null, $newName, $origName, $size);
+            $msgId = sendMessage($conn, $convId, $username, null, $newName, $origName, (int)$validation['size']);
             if ($msgId > 0) {
                 $anyFileSaved = true;
             }

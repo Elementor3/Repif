@@ -36,7 +36,7 @@ require_once __DIR__ . '/../includes/header.php';
         <div class="card text-center">
             <div class="card-body py-4">
                 <?php if (!empty($profile['avatar'])): ?>
-                <img src="/assets/avatars/presets/<?= e($profile['avatar']) ?>" class="rounded-circle mb-3" width="96" height="96" alt="avatar">
+                <img src="<?= e(getAvatarUrl($profile['avatar'], $profile['pk_username']) ?? '') ?>" class="rounded-circle mb-3" width="96" height="96" alt="avatar">
                 <?php else: ?>
                 <i class="bi bi-person-circle display-1 mb-3 text-muted"></i>
                 <?php endif; ?>

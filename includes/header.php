@@ -22,6 +22,12 @@ $currentPage = basename($_SERVER['PHP_SELF']);
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.min.css">
     <link rel="stylesheet" href="/assets/css/style.css">
+    <?php if ($currentPage === 'profile.php'): ?>
+    <link rel="stylesheet" href="/assets/css/profile.css">
+    <?php endif; ?>
+    <?php if ($currentPage === 'friends.php'): ?>
+    <link rel="stylesheet" href="/assets/css/friends.css">
+    <?php endif; ?>
 </head>
 
 <body>
@@ -30,7 +36,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             <?php if (isLoggedIn()): ?>
                 <a class="navbar-brand fw-semibold d-flex align-items-center text-nowrap me-1" href="/user/profile.php">
                     <?php if (!empty($_SESSION['avatar'])): ?>
-                        <img src="/assets/avatars/presets/<?= e($_SESSION['avatar']) ?>" class="rounded-circle me-1" width="32" height="32" alt="avatar">
+                        <img src="<?= e(getAvatarUrl($_SESSION['avatar'], $_SESSION['username']) ?? '') ?>" class="rounded-circle me-1" width="32" height="32" alt="avatar">
                     <?php else: ?>
                         <i class="bi bi-person-circle fs-4 me-1"></i>
                     <?php endif; ?>

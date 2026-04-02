@@ -39,22 +39,13 @@ if (!isParticipant($conn, $convId, $username)) {
 $storedName = $msg['file_path'];                // how it's stored on disk
 $display    = $msg['file_name'] ?: $storedName; // name shown in chat / download name
 
-$fullPath = __DIR__ . '/uploads/chat/' . $storedName;
+$fullPath = getChatUploadsDir() . DIRECTORY_SEPARATOR . basename($storedName);
 if (!is_file($fullPath)) {
     http_response_code(404);
     exit('File not found');
 }
 
-// Basic MIME detection by extension
-$ext  = strtolower(pathinfo($fullPath, PATHINFO_EXTENSION));
-$mime = 'application/octet-stream';
-if (in_array($ext, ['jpg','jpeg','png','gif'], true)) {
-    $mime = 'image/' . ($ext === 'jpg' ? 'jpeg' : $ext);
-} elseif ($ext === 'pdf') {
-    $mime = 'application/pdf';
-} elseif (in_array($ext, ['txt'], true)) {
-    $mime = 'text/plain';
-}
+$mime = detectMimeTypeForPath($fullPath);
 $disposition = ($mode === 'view') ? 'inline' : 'attachment';
 // Headers
 header('Content-Type: ' . $mime);

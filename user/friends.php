@@ -101,7 +101,7 @@ $outgoingRequests = array_values(array_filter($pendingRequests, function ($r) {
                     <div class="list-group-item d-flex justify-content-between align-items-center" data-friend-username="<?= e($f['pk_username']) ?>">
                         <div class="d-flex align-items-center gap-2">
                             <?php if ($f['avatar'] ?? ''): ?>
-                            <img src="/assets/avatars/presets/<?= e($f['avatar']) ?>" class="rounded-circle" width="36" height="36">
+                            <img src="<?= e(getAvatarUrl($f['avatar'], $f['pk_username']) ?? '') ?>" class="rounded-circle" width="36" height="36">
                             <?php else: ?>
                             <i class="bi bi-person-circle fs-3"></i>
                             <?php endif; ?>
@@ -139,7 +139,7 @@ $outgoingRequests = array_values(array_filter($pendingRequests, function ($r) {
                     <div class="d-flex align-items-center gap-2 py-2 border-bottom" data-request-id="<?= (int)$r['pk_requestID'] ?>">
                         <div>
                             <?php if (!empty($r['avatar'])): ?>
-                            <img src="/assets/avatars/presets/<?= e($r['avatar']) ?>" class="rounded-circle" width="36" height="36" alt="avatar">
+                            <img src="<?= e(getAvatarUrl($r['avatar'], $r['pk_username']) ?? '') ?>" class="rounded-circle" width="36" height="36" alt="avatar">
                             <?php else: ?>
                             <i class="bi bi-person-circle fs-3"></i>
                             <?php endif; ?>
@@ -171,7 +171,7 @@ $outgoingRequests = array_values(array_filter($pendingRequests, function ($r) {
                     <div class="d-flex align-items-center gap-2 py-2 border-bottom" data-request-id="<?= (int)$r['pk_requestID'] ?>" data-outgoing-username="<?= e($r['pk_username']) ?>">
                         <div>
                             <?php if (!empty($r['avatar'])): ?>
-                            <img src="/assets/avatars/presets/<?= e($r['avatar']) ?>" class="rounded-circle" width="36" height="36" alt="avatar">
+                            <img src="<?= e(getAvatarUrl($r['avatar'], $r['pk_username']) ?? '') ?>" class="rounded-circle" width="36" height="36" alt="avatar">
                             <?php else: ?>
                             <i class="bi bi-person-circle fs-3"></i>
                             <?php endif; ?>
