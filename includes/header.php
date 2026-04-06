@@ -9,9 +9,30 @@ $theme = $_SESSION['theme'] ?? 'light';
 $locale = $_SESSION['locale'] ?? 'en';
 $unreadCount = 0;
 $chatUnreadCount = 0;
+$currentUserDisplayName = '';
+$currentUserAvatarUrl = null;
 if (isLoggedIn()) {
-    $unreadCount = getUnreadCount($conn, $_SESSION['username']);
-    $chatUnreadCount = getTotalUnreadChatCount($conn, $_SESSION['username']);
+    $currentUsername = (string)($_SESSION['username'] ?? '');
+    $unreadCount = getUnreadCount($conn, $currentUsername);
+    $chatUnreadCount = getTotalUnreadChatCount($conn, $currentUsername);
+
+    $profileStmt = $conn->prepare("SELECT firstName, lastName, avatar FROM user WHERE pk_username = ? LIMIT 1");
+    $profileStmt->bind_param("s", $currentUsername);
+    $profileStmt->execute();
+    $profileRow = $profileStmt->get_result()->fetch_assoc();
+
+    $avatarValue = (string)($_SESSION['avatar'] ?? '');
+    if ($profileRow) {
+        $fullName = trim((string)($profileRow['firstName'] ?? '') . ' ' . (string)($profileRow['lastName'] ?? ''));
+        $currentUserDisplayName = $fullName !== '' ? $fullName : $currentUsername;
+        $avatarValue = (string)($profileRow['avatar'] ?? '');
+        $_SESSION['full_name'] = $currentUserDisplayName;
+        $_SESSION['avatar'] = $avatarValue;
+    } else {
+        $currentUserDisplayName = (string)($_SESSION['full_name'] ?? $currentUsername);
+    }
+
+    $currentUserAvatarUrl = getAvatarUrl($avatarValue, $currentUsername);
 }
 $currentPage = basename($_SERVER['PHP_SELF']);
 ?>
@@ -31,6 +52,9 @@ $currentPage = basename($_SERVER['PHP_SELF']);
     <?php if ($currentPage === 'friends.php'): ?>
     <link rel="stylesheet" href="/assets/css/friends.css">
     <?php endif; ?>
+    <?php if ($currentPage === 'stations.php'): ?>
+    <link rel="stylesheet" href="/assets/css/stations.css">
+    <?php endif; ?>
     <?php if ($currentPage === 'chat.php'): ?>
     <link rel="stylesheet" href="/assets/css/chat.css">
     <?php endif; ?>
@@ -40,13 +64,21 @@ $currentPage = basename($_SERVER['PHP_SELF']);
     <nav class="navbar navbar-expand-lg fixed-top navbar-themed">
         <div class="container-fluid px-3 px-lg-4">
             <?php if (isLoggedIn()): ?>
-                <a class="navbar-brand fw-semibold d-flex align-items-center text-nowrap me-1" href="/user/profile.php">
-                    <?php if (!empty($_SESSION['avatar'])): ?>
-                        <img src="<?= e(getAvatarUrl($_SESSION['avatar'], $_SESSION['username']) ?? '') ?>" class="rounded-circle me-1" width="32" height="32" alt="avatar">
+                <a class="navbar-brand fw-semibold d-flex align-items-center text-nowrap me-1 navbar-identity" href="/user/profile.php" id="navbarIdentityLink">
+                    <?php if (!empty($currentUserAvatarUrl)): ?>
+                        <img
+                            src="<?= e($currentUserAvatarUrl) ?>"
+                            class="rounded-circle me-1 navbar-identity-avatar"
+                            width="32"
+                            height="32"
+                            alt="avatar"
+                            id="navbarIdentityAvatarImg"
+                            onerror="this.classList.add('d-none'); var f = document.getElementById('navbarIdentityAvatarFallback'); if (f) f.classList.remove('d-none');">
+                        <i class="bi bi-person-circle fs-4 me-1 navbar-identity-avatar-fallback d-none" id="navbarIdentityAvatarFallback"></i>
                     <?php else: ?>
-                        <i class="bi bi-person-circle fs-4 me-1"></i>
+                        <i class="bi bi-person-circle fs-4 me-1 navbar-identity-avatar-fallback" id="navbarIdentityAvatarFallback"></i>
                     <?php endif; ?>
-                    <span class="text-truncate"><?= e($_SESSION['full_name'] ?? $_SESSION['username']) ?></span>
+                    <span class="text-truncate navbar-identity-name" id="navbarIdentityName"><?= e($currentUserDisplayName) ?></span>
                 </a>
                 <div class="collapse navbar-collapse justify-content-center" id="navbarMain">
                     <ul class="navbar-nav">

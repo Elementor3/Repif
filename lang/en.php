@@ -24,6 +24,7 @@ return [
     'edit' => 'Edit',
     'create' => 'Create',
     'station_serial' => 'Station Serial Number',
+    'serial_number' => 'Serial Number',
     'name' => 'Name',
     'description' => 'Description',
     'temperature' => 'Temperature (°C)',

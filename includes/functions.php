@@ -23,8 +23,16 @@ function requireAdmin(): void {
 }
 
 function formatDateTime(?string $datetime): string {
-    if (!$datetime) return '-';
-    return date('Y-m-d H:i', strtotime($datetime));
+    if (!$datetime) {
+        return '-';
+    }
+
+    try {
+        $dt = new DateTime($datetime);
+        return $dt->format('d.m.Y H:i');
+    } catch (Throwable $e) {
+        return (string)$datetime;
+    }
 }
 
 function convertToMySQLDateTime(string $input): string {

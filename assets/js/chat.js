@@ -129,7 +129,6 @@
 		var chatLastMsgId = chatLastMsgIdInitial;
 		var chatSelectedFiles = [];
 		var pollMessagesTimer = null;
-		var pollChatsTimer = null;
 		var pollUnreadTimer = null;
 		var draftSaveTimer = null;
 		var chatDraftFiles = [];
@@ -150,6 +149,7 @@
 		var CHAT_SEARCH_STORAGE_KEY = 'chatSearchQuery';
 		var chatReferrer = document.referrer || '';
 		var keepNewGroupState = false;
+		var lastChatsListSignature = '';
 
 		function setMobilePane(showMain) {
 			$('#chatContainer').toggleClass('chat-mobile-open', !!showMain);
@@ -583,6 +583,32 @@
 				});
 			}
 			$('#chatSidebarList').html(html);
+			setActiveConversationInSidebar(chatConvId);
+		}
+
+		function setActiveConversationInSidebar(convId) {
+			var idNum = Number(convId || 0);
+			$('.chat-conv-item').removeClass('active');
+			if (idNum > 0) {
+				$('.chat-conv-item[data-conv-id="' + idNum + '"]').addClass('active');
+			}
+		}
+
+		function buildChatsListSignature(chats) {
+			var safeChats = Array.isArray(chats) ? chats : [];
+			var normalized = safeChats.map(function (c) {
+				return {
+					id: Number(c.pk_conversationID || 0),
+					type: String(c.type || ''),
+					name: String(c.display_name || c.name || ''),
+					preview: String(c.last_message || ''),
+					avatar: String(c.avatar_url || '')
+				};
+			});
+
+			return JSON.stringify({
+				items: normalized
+			});
 		}
 
 		function loadUnreadCounts() {
@@ -593,7 +619,18 @@
 
 		function loadChatsList() {
 			$.get('/api/chat.php', { action: 'get_chats' }, function (res) {
-				if (res && res.success) renderChatsList(res.chats || []);
+				if (!(res && res.success)) {
+					return;
+				}
+
+				var chats = res.chats || [];
+				var nextSignature = buildChatsListSignature(chats);
+				if (nextSignature === lastChatsListSignature) {
+					return;
+				}
+
+				lastChatsListSignature = nextSignature;
+				renderChatsList(chats);
 			}, 'json');
 		}
 
@@ -606,12 +643,12 @@
 				var conv = res.conversation || {};
 				chatConvId = Number(conv.pk_conversationID || 0);
 				chatLastMsgId = Number(res.last_message_id || 0);
+				setActiveConversationInSidebar(chatConvId);
 				renderConversationMain(conv, res.messages || [], res.draft_text || '', res.draft_files || []);
 				setMobilePane(true);
 				if (pushHistory) {
 					window.history.pushState({ conv: chatConvId }, '', '/user/chat.php?conv=' + chatConvId);
 				}
-				loadChatsList();
 				loadUnreadCounts();
 				restoreGroupInfoFromStateIfNeeded();
 			}, 'json').fail(function () {
@@ -644,6 +681,7 @@
 
 			$.post('/api/chat.php', { action: 'create_private_chat', with_user: otherUser }, function (res) {
 				if (res && res.success) {
+					loadChatsList();
 					loadConversation(Number(res.conversation_id), true);
 				} else {
 					alert((res && res.message) ? res.message : chatErrorText);
@@ -763,13 +801,13 @@
 		loadUnreadCounts();
 		loadChatsList();
 		pollUnreadTimer = setInterval(loadUnreadCounts, 3000);
-		pollChatsTimer = setInterval(loadChatsList, 5000);
 		pollMessagesTimer = setInterval(loadNewMessages, 3000);
 
 		$(document).on('click', '.chat-conv-item[data-conv-id]', function (e) {
 			e.preventDefault();
 			var convId = Number($(this).data('conv-id') || 0);
 			if (convId) {
+				setActiveConversationInSidebar(convId);
 				saveDraftNow();
 				loadConversation(convId, true);
 			}

@@ -24,6 +24,7 @@ return [
     'edit' => 'Редагувати',
     'create' => 'Створити',
     'station_serial' => 'Серійний номер станції',
+    'serial_number' => 'Серійний номер',
     'name' => 'Назва',
     'description' => 'Опис',
     'temperature' => 'Температура (°C)',

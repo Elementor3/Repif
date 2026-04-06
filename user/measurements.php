@@ -351,9 +351,20 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
 
     function formatDateTime(value) {
         if (!value) return '-';
-        var dt = new Date(value);
-        if (isNaN(dt.getTime())) return value;
-        return dt.toLocaleString();
+        var raw = String(value).trim();
+        var parsed = new Date(raw.replace(' ', 'T'));
+
+        if (!isNaN(parsed.getTime())) {
+            return pad2(parsed.getDate()) + '.' + pad2(parsed.getMonth() + 1) + '.' + parsed.getFullYear()
+                + ' ' + pad2(parsed.getHours()) + ':' + pad2(parsed.getMinutes());
+        }
+
+        var m = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::\d{2})?)?$/);
+        if (m) {
+            return m[3] + '.' + m[2] + '.' + m[1] + (m[4] ? (' ' + m[4] + ':' + m[5]) : '');
+        }
+
+        return raw;
     }
 
     function pad2(value) {

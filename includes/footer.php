@@ -7,6 +7,9 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="/assets/js/app.js"></script>
 <script src="/assets/js/friends.js"></script>
+<?php if (basename($_SERVER['PHP_SELF']) === 'stations.php'): ?>
+<script src="/assets/js/stations.js"></script>
+<?php endif; ?>
 <?php if (basename($_SERVER['PHP_SELF']) === 'chat.php'): ?>
 <script src="/assets/js/chat.js"></script>
 <?php endif; ?>

@@ -48,6 +48,48 @@ $(function () {
             .trim();
     }
 
+    function fitNavbarIdentityName() {
+        var $name = $('#navbarIdentityName');
+        var $container = $('.navbar-themed .container-fluid').first();
+        if (!$name.length || !$container.length) {
+            return;
+        }
+
+        var isDesktop = window.matchMedia('(min-width: 992px)').matches;
+        var maxNameWidth = isDesktop ? 'min(42vw, 460px)' : 'calc(100vw - 230px)';
+        var baseSize = isDesktop ? 16 : 15;
+        var minSize = isDesktop ? 12 : 11;
+
+        $name.css({
+            fontSize: baseSize + 'px',
+            maxWidth: maxNameWidth,
+            overflow: 'visible',
+            textOverflow: 'clip'
+        });
+
+        var containerEl = $container.get(0);
+        for (var size = baseSize; size >= minSize; size -= 0.5) {
+            $name.css('font-size', size + 'px');
+            if (containerEl.scrollWidth <= containerEl.clientWidth) {
+                return;
+            }
+        }
+
+        $name.css({
+            fontSize: minSize + 'px',
+            maxWidth: isDesktop ? '220px' : '140px',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis'
+        });
+    }
+
+    fitNavbarIdentityName();
+    var fitNavbarTimer = null;
+    $(window).on('resize', function () {
+        clearTimeout(fitNavbarTimer);
+        fitNavbarTimer = setTimeout(fitNavbarIdentityName, 80);
+    });
+
     // Notification poll
     function loadNotifications() {
         $.get('/api/notifications.php', { action: 'get_count' }, function (res) {

@@ -32,6 +32,32 @@ body {
     min-width: 0;
 }
 
+.navbar-themed .navbar-identity {
+    min-width: 0;
+    max-width: min(42vw, 460px);
+    gap: 0.2rem;
+}
+
+.navbar-themed .navbar-identity-avatar {
+    width: 32px;
+    height: 32px;
+    object-fit: cover;
+    flex-shrink: 0;
+}
+
+.navbar-themed .navbar-identity-avatar-fallback {
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.navbar-themed .navbar-identity-name {
+    display: block;
+    min-width: 0;
+    line-height: 1.1;
+    white-space: nowrap;
+    font-size: 1rem;
+}
+
 /* Card shadows */
 .card {
     box-shadow: 0 2px 8px rgba(0,0,0,0.08);
@@ -264,5 +290,9 @@ body {
         max-width: calc(100vw - 1.5rem);
         min-width: 0 !important;
         z-index: 1080;
+    }
+
+    .navbar-themed .navbar-identity {
+        max-width: calc(100vw - 230px);
     }
 }

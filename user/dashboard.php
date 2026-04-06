@@ -89,13 +89,10 @@ require_once __DIR__ . '/../includes/header.php';
                         <div class="sensor-value text-warning"><?= $sd['latest']['lightIntensity'] !== null ? e($sd['latest']['lightIntensity']) . ' lux' : '-' ?></div>
                         <div class="sensor-label"><?= t('light_intensity') ?></div>
                     </div>
-                    <div class="col-12">
+                    <div class="col-6">
                         <div class="sensor-value text-info"><?= $sd['latest']['airQuality'] !== null ? e($sd['latest']['airQuality']) . ' ppm' : '-' ?></div>
                         <div class="sensor-label"><?= t('air_quality') ?></div>
                     </div>
-                </div>
-                <div class="text-center mt-2">
-                    <small class="text-muted"><?= formatDateTime($sd['latest']['timestamp']) ?></small>
                 </div>
                 <?php else: ?>
                 <p class="text-muted text-center"><?= t('no_data') ?></p>

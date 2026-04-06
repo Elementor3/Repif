@@ -54,47 +54,49 @@ $stations = getUserStationsList($conn, $username);
     </button>
 </div>
 
-<?php if ($msg): ?><?= showSuccess($msg) ?><?php endif; ?>
 <?php if ($err): ?><?= showError($err) ?><?php endif; ?>
 
 <?php if (empty($stations)): ?>
     <div class="alert alert-info"><?= t('no_stations') ?></div>
 <?php else: ?>
-<div class="table-responsive">
-    <table class="table table-hover align-middle">
-        <thead>
-            <tr>
-                <th><?= t('station_serial') ?></th>
-                <th><?= t('name') ?></th>
-                <th><?= t('description') ?></th>
-                <th><?= t('registered_at') ?></th>
-                <th><?= t('actions') ?></th>
-            </tr>
-        </thead>
-        <tbody>
-        <?php foreach ($stations as $st): ?>
-        <tr>
-            <td><code><?= e($st['pk_serialNumber']) ?></code></td>
-            <td><?= e($st['name'] ?? '') ?></td>
-            <td><?= e($st['description'] ?? '') ?></td>
-            <td><?= formatDateTime($st['registeredAt'] ?? null) ?></td>
-            <td>
-                <button class="btn btn-sm btn-outline-primary" onclick="editStation(<?= htmlspecialchars(json_encode($st['pk_serialNumber']), ENT_QUOTES) ?>,<?= htmlspecialchars(json_encode($st['name'] ?? ''), ENT_QUOTES) ?>,<?= htmlspecialchars(json_encode($st['description'] ?? ''), ENT_QUOTES) ?>)">
-                    <i class="bi bi-pencil"></i>
-                </button>
-                <a href="/user/measurements.php?station=<?= urlencode($st['pk_serialNumber']) ?>" class="btn btn-sm btn-outline-secondary">
-                    <i class="bi bi-graph-up"></i>
-                </a>
-                <form method="post" class="d-inline" onsubmit="return confirm('<?= t('confirm_delete') ?>')">
-                    <input type="hidden" name="action" value="unregister">
-                    <input type="hidden" name="serial" value="<?= e($st['pk_serialNumber']) ?>">
-                    <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-x-circle"></i></button>
-                </form>
-            </td>
-        </tr>
-        <?php endforeach; ?>
-        </tbody>
-    </table>
+<div class="row g-3" id="stationsCardsGrid">
+    <?php foreach ($stations as $st): ?>
+    <div class="col-12 col-sm-6 col-lg-4 col-xl-3">
+        <div class="card station-list-card h-100">
+            <div class="card-body d-flex flex-column">
+                <div class="d-flex align-items-start justify-content-between gap-2 mb-2">
+                    <h6 class="mb-0 text-truncate station-card-title"><?= e(($st['name'] ?? '') !== '' ? $st['name'] : $st['pk_serialNumber']) ?></h6>
+                    <i class="bi bi-broadcast-pin text-primary"></i>
+                </div>
+
+                <div class="small text-muted mb-1"><?= t('serial_number') ?></div>
+                <div><code class="station-serial-code"><?= e($st['pk_serialNumber']) ?></code></div>
+
+                <div class="small text-muted mt-2 mb-1"><?= t('description') ?></div>
+                <div class="station-list-description"><?= e(($st['description'] ?? '') !== '' ? $st['description'] : '-') ?></div>
+
+                <div class="small text-muted mt-2 mb-1"><?= t('registered_at') ?></div>
+                <div class="small"><?= formatDateTime($st['registeredAt'] ?? null) ?></div>
+            </div>
+
+            <div class="card-footer bg-transparent border-top-0 pt-1">
+                <div class="d-flex gap-2 station-card-actions">
+                    <button class="btn btn-outline-primary" title="<?= e(t('edit')) ?>" onclick="editStation(<?= htmlspecialchars(json_encode($st['pk_serialNumber']), ENT_QUOTES) ?>,<?= htmlspecialchars(json_encode($st['name'] ?? ''), ENT_QUOTES) ?>,<?= htmlspecialchars(json_encode($st['description'] ?? ''), ENT_QUOTES) ?>)">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                    <a href="/user/measurements.php?station=<?= urlencode($st['pk_serialNumber']) ?>" class="btn btn-outline-secondary" title="<?= e(t('measurements')) ?>">
+                        <i class="bi bi-graph-up"></i>
+                    </a>
+                    <form method="post" class="d-inline" onsubmit="return confirm('<?= t('confirm_delete') ?>')">
+                        <input type="hidden" name="action" value="unregister">
+                        <input type="hidden" name="serial" value="<?= e($st['pk_serialNumber']) ?>">
+                        <button type="submit" class="btn btn-outline-danger" title="<?= e(t('delete')) ?>"><i class="bi bi-x-circle"></i></button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php endforeach; ?>
 </div>
 <?php endif; ?>
 
@@ -110,7 +112,7 @@ $stations = getUserStationsList($conn, $username);
                 <input type="hidden" name="action" value="register">
                 <div class="modal-body">
                     <div class="mb-3">
-                        <label class="form-label"><?= t('station_serial') ?></label>
+                        <label class="form-label"><?= t('serial_number') ?></label>
                         <input type="text" name="serial" class="form-control" required placeholder="e.g. SN-001">
                     </div>
                 </div>
@@ -153,12 +155,4 @@ $stations = getUserStationsList($conn, $username);
     </div>
 </div>
 
-<script>
-function editStation(serial, name, desc) {
-    document.getElementById('editSerial').value = serial;
-    document.getElementById('editName').value = name;
-    document.getElementById('editDesc').value = desc;
-    new bootstrap.Modal(document.getElementById('editModal')).show();
-}
-</script>
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
