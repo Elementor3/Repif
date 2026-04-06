@@ -3,13 +3,12 @@ require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/i18n.php';
 require_once __DIR__ . '/../services/measurements.php';
-require_once __DIR__ . '/../services/stations.php';
 require_once __DIR__ . '/../services/collections.php';
 requireLogin();
 
 $username = $_SESSION['username'];
-$myStations = getUserStationsList($conn, $username);
-$myCollections = getUserCollections($conn, $username);
+$myStations = getStationsFromOwnedMeasurements($conn, $username);
+$myCollections = getUserCollectionsForMeasurements($conn, $username);
 $stationSerials = array_column($myStations, 'pk_serialNumber');
 $myCollectionIds = array_map('intval', array_column($myCollections, 'pk_collectionID'));
 
@@ -33,7 +32,7 @@ if ($filters['collection'] !== '') {
     }
 }
 
-$filtersWithAccess = array_merge($filters, ['allowed_stations' => $stationSerials]);
+$filtersWithAccess = array_merge($filters, ['owner_id' => $username]);
 
 function slugifyFilenamePart(string $value): string {
     $value = trim($value);
@@ -112,6 +111,16 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
 }
 
 require_once __DIR__ . '/../includes/header.php';
+
+?>
+<style>
+    @media (max-width: 576px) {
+        #measurementMetricChartBody {
+            height: 440px !important;
+        }
+    }
+</style>
+<?php
 
 $page = max(1, (int)($_GET['page'] ?? 1));
 $perPage = (int)($_GET['per_page'] ?? 20);
@@ -273,10 +282,22 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
                     </a>
                 </div>
             </div>
+            <div class="mt-2 d-none" id="chartStationPickerWrap">
+                <div class="form-text mb-1" id="chartStationPickerHint"></div>
+                <div>
+                    <button class="btn btn-sm btn-outline-primary w-100 text-start d-flex justify-content-between align-items-center" type="button" id="chartStationPickerBtn" data-bs-toggle="collapse" data-bs-target="#chartStationPickerPanel" aria-expanded="false" aria-controls="chartStationPickerPanel">
+                        <?= t('station') ?>
+                        <i class="bi bi-chevron-down ms-2" id="chartStationPickerBtnIcon"></i>
+                    </button>
+                    <div class="collapse border rounded bg-body mt-1 p-2" id="chartStationPickerPanel">
+                        <div id="chartStationPickerMenu"></div>
+                    </div>
+                </div>
+            </div>
         </div>
-        <div class="card">
+        <div class="card mt-3" id="measurementChartCard">
             <div class="card-header" id="activeChartTitle"><?= t('temperature') ?></div>
-            <div class="card-body" style="height:360px;"><canvas id="measurementMetricChartCanvas"></canvas></div>
+            <div class="card-body" id="measurementMetricChartBody" style="height:360px;"><canvas id="measurementMetricChartCanvas"></canvas></div>
         </div>
     </div>
 </div>
@@ -290,6 +311,11 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
     var selectedChartMetric = 'temperature';
     var paginationTemplate = <?= json_encode(t('pagination_info')) ?>;
     var noDataText = <?= json_encode(t('no_measurements')) ?>;
+    var chartStationLabel = <?= json_encode(t('station')) ?>;
+    var chartStationLimitText = <?= json_encode(t('chart_station_limit')) ?>;
+    var chartStationSearchPlaceholder = <?= json_encode(t('chart_station_search_placeholder')) ?>;
+    var chartStationNoResultsText = <?= json_encode(t('chart_station_no_results')) ?>;
+    var CHART_COLORS = ['#FF0000', '#FFFF00', '#00FF00', '#0000FF', '#FF00FF', '#00FFFF'];
     var chartDataCache = {
         temperature: [],
         airPressure: [],
@@ -326,6 +352,12 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
             metricKey: 'airQuality'
         }
     };
+    var CHART_STATION_LIMIT = 6;
+    var selectedChartStations = {};
+    var userManuallyChangedStationSelection = false;
+    var chartStationSearchQuery = '';
+    var chartStationPickerCollapse = null;
+    var chartStationColorAssignments = {};
 
     async function getJson(url) {
         var response = await fetch(url, {
@@ -577,28 +609,300 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
         list.innerHTML = html;
     }
 
-    function getSeriesColorByIndex(index, alpha) {
-        var vividPalette = [
-            '255, 59, 48',   // red
-            '0, 122, 255',   // blue
-            '52, 199, 89',   // green
-            '255, 149, 0',   // orange
-            '175, 82, 222',  // violet
-            '0, 199, 190',   // teal
-            '255, 45, 85',   // pink
-            '88, 86, 214',   // indigo
-            '255, 204, 0',   // yellow
-            '90, 200, 250',  // light blue
-            '48, 209, 88',   // bright green
-            '255, 105, 180'  // hot pink
-        ];
-
-        if (index < vividPalette.length) {
-            return 'rgba(' + vividPalette[index] + ', ' + alpha + ')';
+    function hexToRgba(hex, alpha) {
+        var raw = String(hex || '').replace('#', '').trim();
+        if (raw.length !== 6) {
+            return 'rgba(0,0,0,' + alpha + ')';
         }
 
-        var hue = (index * 137.508) % 360;
-        return 'hsla(' + hue + ', 85%, 45%, ' + alpha + ')';
+        var r = parseInt(raw.slice(0, 2), 16);
+        var g = parseInt(raw.slice(2, 4), 16);
+        var b = parseInt(raw.slice(4, 6), 16);
+        return 'rgba(' + r + ', ' + g + ', ' + b + ', ' + alpha + ')';
+    }
+
+    function getSeriesColorByIndex(index, alpha) {
+        var color = CHART_COLORS[index % CHART_COLORS.length];
+        if (alpha >= 1) {
+            return color;
+        }
+        return hexToRgba(color, alpha);
+    }
+
+    function isMobileView() {
+        return window.matchMedia && window.matchMedia('(max-width: 576px)').matches;
+    }
+
+    function formatXAxisTickLabel(label) {
+        var text = String(label || '');
+        if (!isMobileView()) {
+            return text;
+        }
+
+        // Mobile: dd.mm.yyyy hh:mm -> dd.mm hh:mm
+        var m = text.match(/^(\d{2}\.\d{2})\.\d{4}\s+(\d{2}:\d{2})$/);
+        if (m) {
+            return m[1] + ' ' + m[2];
+        }
+
+        return text;
+    }
+
+    function truncateLegendText(text, maxLen) {
+        var src = String(text || '');
+        if (src.length <= maxLen) {
+            return src;
+        }
+        return src.slice(0, maxLen - 1) + '…';
+    }
+
+    function computeLegendDynamicPadding(chart, datasets) {
+        if (!chart || !chart.ctx || !Array.isArray(datasets) || datasets.length === 0) {
+            return isMobileView() ? 16 : 22;
+        }
+
+        var mobile = isMobileView();
+        var cols = mobile ? 3 : Math.min(3, datasets.length);
+        var slotWidth = Math.max(80, (chart.width || 0) / Math.max(1, cols));
+        var fontSize = mobile ? 12 : 13;
+        var pointWidth = mobile ? 12 : 14;
+        var gap = 8;
+        var maxLen = mobile ? 8 : 18;
+        var maxTextWidth = 0;
+
+        chart.ctx.save();
+        chart.ctx.font = fontSize + 'px sans-serif';
+        datasets.forEach(function (ds) {
+            var txt = truncateLegendText(ds.label || '', maxLen);
+            var w = chart.ctx.measureText(txt).width;
+            if (w > maxTextWidth) {
+                maxTextWidth = w;
+            }
+        });
+        chart.ctx.restore();
+
+        var innerWidth = pointWidth + gap + maxTextWidth;
+        var computed = Math.floor((slotWidth - innerWidth) / 2);
+        return Math.max(8, Math.min(32, computed));
+    }
+
+    function getChartStationPickerCollapse() {
+        if (chartStationPickerCollapse) {
+            return chartStationPickerCollapse;
+        }
+
+        var panel = document.getElementById('chartStationPickerPanel');
+        if (!panel || typeof bootstrap === 'undefined' || !bootstrap.Collapse) {
+            return null;
+        }
+
+        chartStationPickerCollapse = bootstrap.Collapse.getOrCreateInstance(panel, { toggle: false });
+        return chartStationPickerCollapse;
+    }
+
+    function updateStationColorAssignments(activeStationKeys) {
+        var activeMap = {};
+        activeStationKeys.forEach(function (key) {
+            activeMap[key] = true;
+        });
+
+        Object.keys(chartStationColorAssignments).forEach(function (key) {
+            if (!activeMap[key]) {
+                delete chartStationColorAssignments[key];
+            }
+        });
+
+        var used = {};
+        Object.keys(chartStationColorAssignments).forEach(function (key) {
+            var idx = chartStationColorAssignments[key];
+            if (idx >= 0 && idx < CHART_COLORS.length) {
+                used[idx] = true;
+            }
+        });
+
+        activeStationKeys.forEach(function (key) {
+            if (chartStationColorAssignments[key] !== undefined) {
+                return;
+            }
+
+            var freeIdx = -1;
+            for (var i = 0; i < CHART_COLORS.length; i++) {
+                if (!used[i]) {
+                    freeIdx = i;
+                    break;
+                }
+            }
+
+            if (freeIdx === -1) {
+                freeIdx = 0;
+            }
+
+            chartStationColorAssignments[key] = freeIdx;
+            used[freeIdx] = true;
+        });
+    }
+
+    function getAvailableChartStations(chartRows) {
+        var map = {};
+        (chartRows || []).forEach(function (row) {
+            var key = String(row.fk_station || '').trim();
+            if (!key) return;
+            if (!map[key]) {
+                map[key] = {
+                    key: key,
+                    name: String(row.station_name || key)
+                };
+            }
+        });
+
+        return Object.keys(map).map(function (k) {
+            return map[k];
+        }).sort(function (a, b) {
+            return a.name.localeCompare(b.name);
+        });
+    }
+
+    function countSelectedStations(stations) {
+        var count = 0;
+        stations.forEach(function (s) {
+            if (selectedChartStations[s.key]) {
+                count += 1;
+            }
+        });
+        return count;
+    }
+
+    function ensureStationSelection(stations) {
+        if (!stations.length) {
+            selectedChartStations = {};
+            return;
+        }
+
+        // Drop selections that are no longer present in current dataset.
+        var validKeys = {};
+        stations.forEach(function (s) {
+            validKeys[s.key] = true;
+        });
+        Object.keys(selectedChartStations).forEach(function (key) {
+            if (!validKeys[key]) {
+                delete selectedChartStations[key];
+            }
+        });
+
+        var currentlySelected = countSelectedStations(stations);
+
+        if (stations.length <= CHART_STATION_LIMIT) {
+            if (currentlySelected === 0 && !userManuallyChangedStationSelection) {
+                stations.forEach(function (s) {
+                    selectedChartStations[s.key] = true;
+                });
+            }
+            return;
+        }
+
+        // Enforce hard limit for cases when selection was previously made with <= limit.
+        if (currentlySelected > CHART_STATION_LIMIT) {
+            var keep = 0;
+            stations.forEach(function (s) {
+                if (!selectedChartStations[s.key]) {
+                    return;
+                }
+
+                if (keep < CHART_STATION_LIMIT) {
+                    keep += 1;
+                    return;
+                }
+
+                delete selectedChartStations[s.key];
+            });
+            currentlySelected = countSelectedStations(stations);
+        }
+
+        if (currentlySelected > 0) {
+            return;
+        }
+
+        if (userManuallyChangedStationSelection) {
+            return;
+        }
+
+        selectedChartStations = {};
+        stations.slice(0, CHART_STATION_LIMIT).forEach(function (s) {
+            selectedChartStations[s.key] = true;
+        });
+    }
+
+    function filterChartRowsForSelection(chartRows) {
+        var stations = getAvailableChartStations(chartRows);
+        ensureStationSelection(stations);
+
+        return (chartRows || []).filter(function (row) {
+            var key = String(row.fk_station || '').trim();
+            return !!selectedChartStations[key];
+        });
+    }
+
+    function renderChartStationPicker(stations) {
+        var wrap = document.getElementById('chartStationPickerWrap');
+        var menu = document.getElementById('chartStationPickerMenu');
+        var btn = document.getElementById('chartStationPickerBtn');
+        var hint = document.getElementById('chartStationPickerHint');
+        if (!wrap || !menu || !btn || !hint) {
+            return;
+        }
+
+        if (!stations.length || stations.length <= 1) {
+            wrap.classList.add('d-none');
+            menu.innerHTML = '';
+            hint.textContent = '';
+            var collapse = getChartStationPickerCollapse();
+            if (collapse) {
+                collapse.hide();
+            }
+            return;
+        }
+
+        wrap.classList.remove('d-none');
+        var selectedCount = countSelectedStations(stations);
+        btn.textContent = chartStationLabel + ' (' + selectedCount + '/' + CHART_STATION_LIMIT + ')';
+        hint.textContent = chartStationLimitText.replace('{count}', String(CHART_STATION_LIMIT));
+
+        var query = chartStationSearchQuery.trim().toLowerCase();
+        var html = '';
+        html += '<div class="mb-2">';
+        html += '<input type="text" class="form-control form-control-sm" id="chartStationSearchInput" placeholder="' + escapeHtml(chartStationSearchPlaceholder) + '" value="' + escapeHtml(chartStationSearchQuery) + '">';
+        html += '</div>';
+        html += '<div id="chartStationPickerList" style="max-height:160px;overflow-y:auto;">';
+
+        var visibleCount = 0;
+        stations.forEach(function (s) {
+            var stationName = String(s.name || s.key);
+            var stationNameLower = stationName.toLowerCase();
+            var stationKeyLower = String(s.key || '').toLowerCase();
+            if (query && stationNameLower.indexOf(query) === -1 && stationKeyLower.indexOf(query) === -1) {
+                return;
+            }
+
+            var safeId = 'chartStation_' + s.key.replace(/[^a-zA-Z0-9_-]/g, '_');
+            var checked = selectedChartStations[s.key] ? 'checked' : '';
+            html += '<div class="form-check mb-1 chart-station-item px-1 py-1 rounded" data-station-key="' + escapeHtml(s.key) + '" style="cursor:pointer;">';
+            html += '<input class="chart-station-check me-2" type="checkbox" value="' + escapeHtml(s.key) + '" id="' + escapeHtml(safeId) + '" ' + checked + ' style="width:1rem;height:1rem;accent-color:#0d6efd;vertical-align:middle;">';
+            html += '<label class="form-check-label chart-station-label" for="' + escapeHtml(safeId) + '">' + escapeHtml(stationName) + '</label>';
+            html += '</div>';
+            visibleCount += 1;
+        });
+
+        if (visibleCount === 0) {
+            html += '<div class="text-muted small py-1">' + escapeHtml(chartStationNoResultsText) + '</div>';
+        }
+
+        html += '</div>';
+        menu.innerHTML = html;
+
+        var firstSelected = menu.querySelector('.chart-station-check:checked');
+        if (firstSelected && firstSelected.scrollIntoView) {
+            firstSelected.scrollIntoView({ block: 'nearest' });
+        }
     }
 
     function isChartsTabActive() {
@@ -632,11 +936,38 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
                 maintainAspectRatio: false,
                 animation: false,
                 normalized: true,
+                layout: {
+                    padding: {
+                        top: 8
+                    }
+                },
                 interaction: { mode: 'index', intersect: false },
                 plugins: {
                     legend: {
                         display: true,
-                        position: 'top'
+                        position: 'bottom',
+                        align: 'center',
+                        maxHeight: isMobileView() ? 120 : 90,
+                        fullSize: true,
+                        labels: {
+                            padding: isMobileView() ? 18 : 24,
+                            boxWidth: isMobileView() ? 12 : 14,
+                            boxHeight: isMobileView() ? 12 : 14,
+                            usePointStyle: true,
+                            pointStyle: 'circle',
+                            font: {
+                                size: isMobileView() ? 12 : 13
+                            },
+                            generateLabels: function (chart) {
+                                var defaults = Chart.defaults.plugins.legend.labels.generateLabels(chart);
+                                var maxLen = isMobileView() ? 8 : 18;
+                                return defaults.map(function (item) {
+                                    item.text = truncateLegendText(item.text, maxLen);
+                                    item.pointStyle = 'circle';
+                                    return item;
+                                });
+                            }
+                        }
                     },
                     decimation: {
                         enabled: true,
@@ -651,7 +982,15 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
                             text: <?= json_encode(t('timestamp')) ?>
                         },
                         ticks: {
-                            maxTicksLimit: 8
+                            maxTicksLimit: isMobileView() ? 5 : 8,
+                            maxRotation: 0,
+                            minRotation: 0,
+                            font: {
+                                size: isMobileView() ? 10 : 12
+                            },
+                            callback: function (value) {
+                                return formatXAxisTickLabel(this.getLabelForValue(value));
+                            }
                         }
                     },
                     y: {
@@ -714,15 +1053,23 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
             }
         });
 
-        var datasets = stationOrder.map(function (stationKey, idx) {
+        updateStationColorAssignments(stationOrder);
+
+        var datasets = stationOrder.map(function (stationKey) {
+            var stationName = stationNameMap[stationKey] || stationKey;
+            var colorIndex = chartStationColorAssignments[stationKey] || 0;
+            var nonNullPoints = stationMap[stationKey].reduce(function (acc, v) {
+                return acc + (v !== null ? 1 : 0);
+            }, 0);
             return {
-                label: stationNameMap[stationKey] || stationKey,
+                label: stationName,
                 data: stationMap[stationKey],
-            borderColor: getSeriesColorByIndex(idx, 1),
-            backgroundColor: getSeriesColorByIndex(idx, 0.18),
+                borderColor: getSeriesColorByIndex(colorIndex, 1),
+                backgroundColor: getSeriesColorByIndex(colorIndex, 0.18),
                 borderWidth: 2,
-                pointRadius: 0,
-                pointHoverRadius: 3,
+                pointRadius: nonNullPoints <= 1 ? 4 : 0,
+                pointHoverRadius: nonNullPoints <= 1 ? 6 : 3,
+                pointHitRadius: 8,
                 tension: 0.25,
                 spanGaps: true,
                 fill: false
@@ -750,10 +1097,22 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
             return;
         }
 
-        var series = buildSeriesByStation(chartRows, chartConfig.metricKey);
+        var stations = getAvailableChartStations(chartRows || []);
+        ensureStationSelection(stations);
+        renderChartStationPicker(stations);
+
+        var filteredRows = filterChartRowsForSelection(chartRows || []);
+        var series = buildSeriesByStation(filteredRows, chartConfig.metricKey);
         chart.data.labels = series.labels;
         chart.data.datasets = series.datasets;
         chart.options.scales.y.title.text = chartConfig.yTitle;
+        chart.options.scales.x.ticks.maxTicksLimit = isMobileView() ? 5 : 8;
+        chart.options.scales.x.ticks.font.size = isMobileView() ? 10 : 12;
+        chart.options.plugins.legend.maxHeight = isMobileView() ? 120 : 90;
+        chart.options.plugins.legend.labels.boxWidth = isMobileView() ? 12 : 14;
+        chart.options.plugins.legend.labels.boxHeight = isMobileView() ? 12 : 14;
+        chart.options.plugins.legend.labels.font.size = isMobileView() ? 12 : 13;
+        chart.options.plugins.legend.labels.padding = computeLegendDynamicPadding(chart, series.datasets);
         chart.update('none');
 
         var titleEl = document.getElementById('activeChartTitle');
@@ -843,6 +1202,9 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
 
     function applyFiltersWithoutReload() {
         currentPage = 1;
+        selectedChartStations = {};
+        userManuallyChangedStationSelection = false;
+        chartStationColorAssignments = {};
         chartDataLoaded = {
             temperature: false,
             airPressure: false,
@@ -872,6 +1234,112 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
         currentPage = parseInt(link.getAttribute('data-page'), 10) || 1;
         pollMeasurements();
     });
+
+    document.addEventListener('input', function (e) {
+        var input = e.target.closest('#chartStationSearchInput');
+        if (!input) {
+            return;
+        }
+
+        chartStationSearchQuery = String(input.value || '');
+        renderChartStationPicker(getAvailableChartStations(chartDataCache[selectedChartMetric] || []));
+
+        var newInput = document.getElementById('chartStationSearchInput');
+        if (newInput) {
+            newInput.focus();
+            var len = newInput.value.length;
+            newInput.setSelectionRange(len, len);
+        }
+    });
+
+    document.addEventListener('change', function (e) {
+        var check = e.target.closest('.chart-station-check');
+        if (!check) {
+            return;
+        }
+
+        userManuallyChangedStationSelection = true;
+
+        var stationKey = String(check.value || '').trim();
+        if (!stationKey) {
+            return;
+        }
+
+        if (check.checked) {
+            var selectedCount = 0;
+            Object.keys(selectedChartStations).forEach(function (k) {
+                if (selectedChartStations[k]) {
+                    selectedCount += 1;
+                }
+            });
+
+            if (selectedCount >= CHART_STATION_LIMIT) {
+                check.checked = false;
+                return;
+            }
+
+            selectedChartStations[stationKey] = true;
+        } else {
+            delete selectedChartStations[stationKey];
+        }
+
+        refreshChartsIfVisible();
+    });
+
+    document.addEventListener('click', function (e) {
+        var menu = e.target.closest('#chartStationPickerMenu');
+        if (menu) {
+            e.stopPropagation();
+        }
+
+        var row = e.target.closest('.chart-station-item');
+        if (!row) {
+            return;
+        }
+
+        if (e.target.closest('.chart-station-check') || e.target.closest('.chart-station-label')) {
+            return;
+        }
+
+        var rowCheck = row.querySelector('.chart-station-check');
+        if (!rowCheck) {
+            return;
+        }
+
+        rowCheck.checked = !rowCheck.checked;
+        rowCheck.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    var chartStationPickerPanel = document.getElementById('chartStationPickerPanel');
+    if (chartStationPickerPanel) {
+        chartStationPickerPanel.addEventListener('shown.bs.collapse', function () {
+            var icon = document.getElementById('chartStationPickerBtnIcon');
+            if (icon) {
+                icon.classList.remove('bi-chevron-down');
+                icon.classList.add('bi-chevron-up');
+            }
+
+            var input = chartStationPickerPanel.querySelector('#chartStationSearchInput');
+            if (input) {
+                input.focus();
+                var len = input.value.length;
+                input.setSelectionRange(len, len);
+            }
+
+            var selected = chartStationPickerPanel.querySelector('.chart-station-check:checked');
+            if (selected && selected.scrollIntoView) {
+                selected.scrollIntoView({ block: 'nearest' });
+            }
+        });
+
+        chartStationPickerPanel.addEventListener('hidden.bs.collapse', function () {
+            var icon = document.getElementById('chartStationPickerBtnIcon');
+            if (icon) {
+                icon.classList.remove('bi-chevron-up');
+                icon.classList.add('bi-chevron-down');
+            }
+        });
+    }
 
     document.getElementById('measurementFiltersForm').addEventListener('submit', function (e) {
         e.preventDefault();

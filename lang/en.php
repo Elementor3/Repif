@@ -243,4 +243,7 @@ return [
     'confirm_leave_group' => 'Are you sure you want to leave this group?',
     'group_left_notice' => '{name} left the group',
     'group_joined_notice' => '{name} joined the group',
+    'chart_station_limit' => 'Up to {count} stations at once',
+    'chart_station_search_placeholder' => 'Search stations...',
+    'chart_station_no_results' => 'No stations found',
 ];

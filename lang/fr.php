@@ -243,4 +243,7 @@ return [
     'confirm_leave_group' => 'Voulez-vous vraiment quitter ce groupe ?',
     'group_left_notice' => '{name} a quitté le groupe',
     'group_joined_notice' => '{name} a rejoint le groupe',
+    'chart_station_limit' => 'Jusqu\'a {count} stations a la fois',
+    'chart_station_search_placeholder' => 'Rechercher des stations...',
+    'chart_station_no_results' => 'Aucune station trouvee',
 ];

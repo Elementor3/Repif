@@ -243,4 +243,7 @@ return [
     'confirm_leave_group' => 'Ви впевнені, що хочете покинути цю групу?',
     'group_left_notice' => '{name} покинув(ла) групу',
     'group_joined_notice' => '{name} приєднався(лася) до групи',
+    'chart_station_limit' => 'Одночасно до {count} станцій',
+    'chart_station_search_placeholder' => 'Пошук станцій...',
+    'chart_station_no_results' => 'Станцій не знайдено',
 ];

@@ -6,6 +6,31 @@ function getUserCollections(mysqli $conn, string $username): array {
     return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 }
 
+function getUserCollectionsForMeasurements(mysqli $conn, string $username): array {
+    $username = trim($username);
+    if ($username === '') {
+        return [];
+    }
+
+    $stmt = $conn->prepare(
+        "SELECT DISTINCT c.*
+         FROM collection c
+         WHERE c.fk_user = ?
+            OR EXISTS (
+                SELECT 1
+                FROM contains ct
+                JOIN measurement m ON m.pk_measurementID = ct.pkfk_measurement
+                WHERE ct.pkfk_collection = c.pk_collectionID
+                  AND m.owner_id = ?
+            )
+         ORDER BY c.createdAt DESC"
+    );
+    $stmt->bind_param('ss', $username, $username);
+    $stmt->execute();
+
+    return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+}
+
 function getCollectionById(mysqli $conn, int $id): ?array {
     $stmt = $conn->prepare("SELECT * FROM collection WHERE pk_collectionID = ?");
     $stmt->bind_param("i", $id);

@@ -4,6 +4,12 @@ function buildMeasurementWhere(array $filters): array {
     $types = '';
     $params = [];
 
+    if (!empty($filters['owner_id'])) {
+        $where[] = "m.owner_id = ?";
+        $types .= 's';
+        $params[] = (string)$filters['owner_id'];
+    }
+
     if (array_key_exists('allowed_stations', $filters)) {
         $allowedStations = array_values(array_filter((array)$filters['allowed_stations'], fn($s) => $s !== ''));
         if (empty($allowedStations)) {
@@ -52,6 +58,34 @@ function getMeasurements(mysqli $conn, array $filters, int $page, int $perPage):
     $allParams = array_merge($params, [$perPage, $offset]);
     $stmt->bind_param($allTypes, ...$allParams);
     $stmt->execute();
+    return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+}
+
+function getStationsFromOwnedMeasurements(mysqli $conn, string $ownerId): array {
+    $ownerId = trim($ownerId);
+    if ($ownerId === '') {
+        return [];
+    }
+
+    $stmt = $conn->prepare(
+        "SELECT st.pk_serialNumber,
+                COALESCE(NULLIF(st.name, ''), st.pk_serialNumber) AS name
+         FROM station st
+         WHERE st.fk_registeredBy = ?
+
+         UNION
+
+         SELECT m.fk_station AS pk_serialNumber,
+                COALESCE(NULLIF(s.name, ''), m.fk_station) AS name
+         FROM measurement m
+         LEFT JOIN station s ON s.pk_serialNumber = m.fk_station
+         WHERE m.owner_id = ?
+
+         ORDER BY name ASC"
+    );
+    $stmt->bind_param('ss', $ownerId, $ownerId);
+    $stmt->execute();
+
     return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 }
 
@@ -140,24 +174,23 @@ function exportCsv(mysqli $conn, array $filters): string {
     return $csv;
 }
 
-function deleteMeasurementsByIds(mysqli $conn, array $measurementIds, array $allowedStations): int {
+function deleteMeasurementsByIds(mysqli $conn, array $measurementIds, string $ownerId): int {
     $measurementIds = array_values(array_unique(array_filter(array_map('intval', $measurementIds), fn($id) => $id > 0)));
-    $allowedStations = array_values(array_filter($allowedStations, fn($s) => $s !== ''));
+    $ownerId = trim($ownerId);
 
-    if (empty($measurementIds) || empty($allowedStations)) {
+    if (empty($measurementIds) || $ownerId === '') {
         return 0;
     }
 
     $idPlaceholders = implode(',', array_fill(0, count($measurementIds), '?'));
-    $stationPlaceholders = implode(',', array_fill(0, count($allowedStations), '?'));
-    $types = str_repeat('i', count($measurementIds)) . str_repeat('s', count($allowedStations));
-    $params = array_merge($measurementIds, $allowedStations);
+    $types = str_repeat('i', count($measurementIds)) . 's';
+    $params = array_merge($measurementIds, [$ownerId]);
 
     $sql = "DELETE c, m
             FROM measurement m
             LEFT JOIN contains c ON c.pkfk_measurement = m.pk_measurementID
             WHERE m.pk_measurementID IN ($idPlaceholders)
-              AND m.fk_station IN ($stationPlaceholders)";
+              AND m.owner_id = ?";
     $stmt = $conn->prepare($sql);
     $stmt->bind_param($types, ...$params);
     $stmt->execute();
