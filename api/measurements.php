@@ -19,7 +19,7 @@ $myStations = getStationsFromOwnedMeasurements($conn, $username);
 $stationSerials = array_column($myStations, 'pk_serialNumber');
 $myCollections = getUserCollectionsForMeasurements($conn, $username);
 $collectionIds = array_map(static function ($row) {
-    return (int)($row['pk_id'] ?? 0);
+    return (int)($row['pk_collectionID'] ?? 0);
 }, $myCollections);
 
 if ($action === 'chart' || $action === 'poll') {

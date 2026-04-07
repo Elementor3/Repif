@@ -4,10 +4,11 @@ function buildMeasurementWhere(array $filters): array {
     $types = '';
     $params = [];
 
-    if (!empty($filters['owner_id'])) {
-        $where[] = "m.owner_id = ?";
+    $ownerFilter = (string)($filters['fk_ownerId'] ?? $filters['owner_id'] ?? '');
+    if ($ownerFilter !== '') {
+        $where[] = "m.fk_ownerId = ?";
         $types .= 's';
-        $params[] = (string)$filters['owner_id'];
+        $params[] = $ownerFilter;
     }
 
     if (array_key_exists('allowed_stations', $filters)) {
@@ -52,7 +53,20 @@ function buildMeasurementWhere(array $filters): array {
 function getMeasurements(mysqli $conn, array $filters, int $page, int $perPage): array {
     [$where, $types, $params] = buildMeasurementWhere($filters);
     $offset = ($page - 1) * $perPage;
-    $sql = "SELECT m.*, s.name AS station_name FROM measurement m LEFT JOIN station s ON m.fk_station = s.pk_serialNumber $where ORDER BY m.timestamp DESC LIMIT ? OFFSET ?";
+        $sql = "SELECT m.*,
+                                     COALESCE(
+                                             NULLIF((SELECT h1.name
+                                                             FROM ownership_history h1
+                                                             WHERE h1.fk_serialNumber = m.fk_station
+                                                                 AND h1.fk_ownerId = m.fk_ownerId
+                                                             ORDER BY h1.registeredAt DESC, h1.pk_id DESC
+                                                             LIMIT 1), ''),
+                                             m.fk_station
+                                     ) AS station_name
+                        FROM measurement m
+                        $where
+                        ORDER BY m.timestamp DESC
+                        LIMIT ? OFFSET ?";
     $stmt = $conn->prepare($sql);
     $allTypes = $types . 'ii';
     $allParams = array_merge($params, [$perPage, $offset]);
@@ -68,18 +82,25 @@ function getStationsFromOwnedMeasurements(mysqli $conn, string $ownerId): array 
     }
 
     $stmt = $conn->prepare(
-        "SELECT st.pk_serialNumber,
-                COALESCE(NULLIF(st.name, ''), st.pk_serialNumber) AS name
-         FROM station st
-         WHERE st.fk_registeredBy = ?
+        "SELECT h.fk_serialNumber AS pk_serialNumber,
+            COALESCE(NULLIF(h.name, ''), h.fk_serialNumber) AS name
+         FROM ownership_history h
+         WHERE h.fk_ownerId = ? AND h.unregisteredAt IS NULL
 
          UNION
 
          SELECT m.fk_station AS pk_serialNumber,
-                COALESCE(NULLIF(s.name, ''), m.fk_station) AS name
+            COALESCE(
+                NULLIF((SELECT h2.name
+                                                        FROM ownership_history h2
+                    WHERE h2.fk_serialNumber = m.fk_station
+                      AND h2.fk_ownerId = m.fk_ownerId
+                                                        ORDER BY h2.registeredAt DESC, h2.pk_id DESC
+                    LIMIT 1), ''),
+                m.fk_station
+            ) AS name
          FROM measurement m
-         LEFT JOIN station s ON s.pk_serialNumber = m.fk_station
-         WHERE m.owner_id = ?
+         WHERE m.fk_ownerId = ?
 
          ORDER BY name ASC"
     );
@@ -132,10 +153,17 @@ function getChartData(mysqli $conn, array $filters): array {
                 SELECT m.pk_measurementID,
                        m.timestamp,
                        m.fk_station,
-                       COALESCE(s.name, m.fk_station) AS station_name,
+                                             COALESCE(
+                                                     NULLIF((SELECT h1.name
+                                                                     FROM ownership_history h1
+                                                                     WHERE h1.fk_serialNumber = m.fk_station
+                                                                         AND h1.fk_ownerId = m.fk_ownerId
+                                                                     ORDER BY h1.registeredAt DESC, h1.pk_id DESC
+                                                                     LIMIT 1), ''),
+                                                     m.fk_station
+                                             ) AS station_name,
                        $metricSelect
                 FROM measurement m
-                LEFT JOIN station s ON s.pk_serialNumber = m.fk_station
                 $where
                 ORDER BY m.timestamp DESC
                 LIMIT ?
@@ -152,13 +180,20 @@ function getChartData(mysqli $conn, array $filters): array {
 function exportCsv(mysqli $conn, array $filters): string {
     [$where, $types, $params] = buildMeasurementWhere($filters);
     $sql = "SELECT m.timestamp,
-                   COALESCE(s.name, m.fk_station) AS station,
+                                     COALESCE(
+                                             NULLIF((SELECT h1.name
+                                                             FROM ownership_history h1
+                                                             WHERE h1.fk_serialNumber = m.fk_station
+                                                                 AND h1.fk_ownerId = m.fk_ownerId
+                                                             ORDER BY h1.registeredAt DESC, h1.pk_id DESC
+                                                             LIMIT 1), ''),
+                                             m.fk_station
+                                     ) AS station,
                    m.temperature,
                    m.airPressure,
                    m.lightIntensity,
                    m.airQuality
             FROM measurement m
-            LEFT JOIN station s ON m.fk_station = s.pk_serialNumber
             $where
             ORDER BY m.timestamp DESC";
     $stmt = $conn->prepare($sql);
@@ -190,7 +225,7 @@ function deleteMeasurementsByIds(mysqli $conn, array $measurementIds, string $ow
             FROM measurement m
             LEFT JOIN contains c ON c.pkfk_measurement = m.pk_measurementID
             WHERE m.pk_measurementID IN ($idPlaceholders)
-              AND m.owner_id = ?";
+              AND m.fk_ownerId = ?";
     $stmt = $conn->prepare($sql);
     $stmt->bind_param($types, ...$params);
     $stmt->execute();

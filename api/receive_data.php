@@ -46,7 +46,7 @@ if ($stmt->execute()) {
     $measurementId = $conn->insert_id;
 
     // Auto-populate contains table for active samples
-    $stmt2 = $conn->prepare("INSERT IGNORE INTO contains (pkfk_measurement, pkfk_collection) SELECT ?, fk_collection FROM sample WHERE fk_station = ? AND ? BETWEEN startDateTime AND endDateTime");
+    $stmt2 = $conn->prepare("INSERT IGNORE INTO contains (pkfk_measurement, pkfk_collection) SELECT ?, fk_collection FROM slot WHERE fk_station = ? AND ? BETWEEN startDateTime AND endDateTime");
     $stmt2->bind_param("iss", $measurementId, $serial, $timestamp);
     $stmt2->execute();
 

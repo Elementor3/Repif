@@ -21,8 +21,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $password = $_POST['password'] ?? '';
     if ($username && $password) {
         $user = getUserByUsername($conn, $username);
-        if ($user && password_verify($password, $user['password_hash'])) {
-            if (array_key_exists('email_verified', $user) && (int)$user['email_verified'] !== 1) {
+        if ($user && password_verify($password, $user['passwordHash'])) {
+            if (array_key_exists('isEmailVerified', $user) && (int)$user['isEmailVerified'] !== 1) {
                 $token = createEmailVerificationToken($conn, $user['pk_username']);
                 if ($token && !empty($user['email'])) {
                     $verifyLink = rtrim(APP_URL, '/') . '/auth/verify_email.php?token=' . urlencode($token);
@@ -39,7 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['lastName'] = $user['lastName'];
             $_SESSION['full_name'] = $user['firstName'] . ' ' . $user['lastName'];
             $_SESSION['is_admin'] = $user['role'] === 'Admin';
-            $_SESSION['email_verified'] = (int)($user['email_verified'] ?? 1) === 1;
+            $_SESSION['email_verified'] = (int)($user['isEmailVerified'] ?? 1) === 1;
             $_SESSION['locale'] = $user['locale'] ?? 'en';
             $_SESSION['theme'] = $user['theme'] ?? 'light';
             $_SESSION['avatar'] = $user['avatar'] ?? '';

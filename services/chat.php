@@ -142,10 +142,10 @@ function markConversationRead(mysqli $conn, int $conversationId, string $usernam
 
     $now = date('Y-m-d H:i:s');
     $stmt = $conn->prepare(
-        "INSERT INTO chat_read_state (fk_conversation, fk_user, last_read_message_id, updatedAt)
+        "INSERT INTO chat_read_state (fk_conversation, fk_user, lastReadMessageId, updatedAt)
          VALUES (?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE
-            last_read_message_id = GREATEST(last_read_message_id, VALUES(last_read_message_id)),
+            lastReadMessageId = GREATEST(COALESCE(lastReadMessageId, 0), VALUES(lastReadMessageId)),
             updatedAt = VALUES(updatedAt)"
     );
     $stmt->bind_param("isis", $conversationId, $username, $targetId, $now);
@@ -167,7 +167,7 @@ function getUnreadCountsByConversation(mysqli $conn, string $username): array {
          LEFT JOIN chat_message cm
             ON cm.fk_conversation = cp.fk_conversation
            AND cm.fk_sender <> cp.fk_user
-           AND cm.pk_messageID > COALESCE(crs.last_read_message_id, 0)
+                     AND cm.pk_messageID > COALESCE(crs.lastReadMessageId, 0)
          WHERE cp.fk_user = ?
          GROUP BY cp.fk_conversation"
     );
@@ -193,7 +193,7 @@ function getChatDraft(mysqli $conn, string $username, int $conversationId): stri
         return '';
     }
 
-    $stmt = $conn->prepare("SELECT draft_text FROM chat_draft WHERE fk_conversation = ? AND fk_user = ? LIMIT 1");
+    $stmt = $conn->prepare("SELECT text AS draft_text FROM chat_draft WHERE fk_conversation = ? AND fk_user = ? LIMIT 1");
     $stmt->bind_param("is", $conversationId, $username);
     $stmt->execute();
     $row = $stmt->get_result()->fetch_assoc();
@@ -209,10 +209,10 @@ function saveChatDraft(mysqli $conn, string $username, int $conversationId, stri
     $now = date('Y-m-d H:i:s');
 
     $stmt = $conn->prepare(
-        "INSERT INTO chat_draft (fk_conversation, fk_user, draft_text, updatedAt)
+        "INSERT INTO chat_draft (fk_conversation, fk_user, text, updatedAt)
          VALUES (?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE
-            draft_text = VALUES(draft_text),
+            text = VALUES(text),
             updatedAt = VALUES(updatedAt)"
     );
     $stmt->bind_param("isss", $conversationId, $username, $draftText, $now);
@@ -235,10 +235,10 @@ function getChatDraftFiles(mysqli $conn, string $username, int $conversationId):
     }
 
     $stmt = $conn->prepare(
-        "SELECT pk_draft_file_id, file_path, file_name
+           "SELECT pk_fileID AS pk_draft_file_id, filePath AS file_path, fileName AS file_name
          FROM chat_draft_file
          WHERE fk_conversation = ? AND fk_user = ?
-         ORDER BY pk_draft_file_id ASC"
+            ORDER BY pk_fileID ASC"
     );
     $stmt->bind_param("is", $conversationId, $username);
     $stmt->execute();
@@ -251,7 +251,7 @@ function addChatDraftFile(mysqli $conn, string $username, int $conversationId, s
     }
 
     $stmt = $conn->prepare(
-        "INSERT INTO chat_draft_file (fk_conversation, fk_user, file_path, file_name, createdAt)
+        "INSERT INTO chat_draft_file (fk_conversation, fk_user, filePath, fileName, createdAt)
          VALUES (?, ?, ?, ?, ?)"
     );
     $now = date('Y-m-d H:i:s');
@@ -265,9 +265,9 @@ function deleteChatDraftFileById(mysqli $conn, string $username, int $conversati
     }
 
     $sel = $conn->prepare(
-        "SELECT pk_draft_file_id, file_path, file_name
+           "SELECT pk_fileID AS pk_draft_file_id, filePath AS file_path, fileName AS file_name
          FROM chat_draft_file
-         WHERE pk_draft_file_id = ? AND fk_conversation = ? AND fk_user = ?
+            WHERE pk_fileID = ? AND fk_conversation = ? AND fk_user = ?
          LIMIT 1"
     );
     $sel->bind_param("iis", $draftFileId, $conversationId, $username);
@@ -277,7 +277,7 @@ function deleteChatDraftFileById(mysqli $conn, string $username, int $conversati
         return null;
     }
 
-    $del = $conn->prepare("DELETE FROM chat_draft_file WHERE pk_draft_file_id = ? AND fk_conversation = ? AND fk_user = ?");
+    $del = $conn->prepare("DELETE FROM chat_draft_file WHERE pk_fileID = ? AND fk_conversation = ? AND fk_user = ?");
     $del->bind_param("iis", $draftFileId, $conversationId, $username);
     $del->execute();
 
@@ -403,7 +403,7 @@ function updateGroupConversationAvatar(mysqli $conn, int $chatId, string $avatar
 }
 
 function getMessages(mysqli $conn, int $conversationId, int $sinceId = 0): array {
-    $stmt = $conn->prepare("SELECT cm.*, u.firstName, u.lastName, u.avatar FROM chat_message cm LEFT JOIN user u ON cm.fk_sender = u.pk_username WHERE cm.fk_conversation = ? AND cm.pk_messageID > ? ORDER BY cm.createdAt ASC LIMIT 100");
+    $stmt = $conn->prepare("SELECT cm.*, cm.filePath AS file_path, cm.fileName AS file_name, u.firstName, u.lastName, u.avatar FROM chat_message cm LEFT JOIN user u ON cm.fk_sender = u.pk_username WHERE cm.fk_conversation = ? AND cm.pk_messageID > ? ORDER BY cm.createdAt ASC LIMIT 100");
     $stmt->bind_param("ii", $conversationId, $sinceId);
     $stmt->execute();
     $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
@@ -442,7 +442,7 @@ function getMessages(mysqli $conn, int $conversationId, int $sinceId = 0): array
 
 function sendMessage(mysqli $conn, int $conversationId, string $sender, ?string $message, ?string $filePath = null, ?string $fileName = null): int {
     $now = date('Y-m-d H:i:s');
-    $stmt = $conn->prepare("INSERT INTO chat_message (fk_conversation, fk_sender, message, file_path, file_name, createdAt) VALUES (?,?,?,?,?,?)");
+    $stmt = $conn->prepare("INSERT INTO chat_message (fk_conversation, fk_sender, message, filePath, fileName, createdAt) VALUES (?,?,?,?,?,?)");
     $stmt->bind_param("isssss", $conversationId, $sender, $message, $filePath, $fileName, $now);
     if (!$stmt->execute()) return 0;
     return (int)$conn->insert_id;
@@ -496,8 +496,8 @@ function searchFriendUsers(mysqli $conn, string $currentUser, string $query, int
         $stmt = $conn->prepare(
             "SELECT u.pk_username, u.firstName, u.lastName, u.avatar
              FROM friendship f
-             JOIN user u ON (CASE WHEN f.pk_user1 = ? THEN f.pk_user2 ELSE f.pk_user1 END) = u.pk_username
-             WHERE (f.pk_user1 = ? OR f.pk_user2 = ?)
+               JOIN user u ON (CASE WHEN f.pkfk_user1 = ? THEN f.pkfk_user2 ELSE f.pkfk_user1 END) = u.pk_username
+               WHERE (f.pkfk_user1 = ? OR f.pkfk_user2 = ?)
                AND (u.pk_username LIKE ? OR u.firstName LIKE ? OR u.lastName LIKE ? OR CONCAT(u.firstName, ' ', u.lastName) LIKE ?)
                AND u.pk_username NOT IN (
                     SELECT cp.fk_user
@@ -512,8 +512,8 @@ function searchFriendUsers(mysqli $conn, string $currentUser, string $query, int
         $stmt = $conn->prepare(
             "SELECT u.pk_username, u.firstName, u.lastName, u.avatar
              FROM friendship f
-             JOIN user u ON (CASE WHEN f.pk_user1 = ? THEN f.pk_user2 ELSE f.pk_user1 END) = u.pk_username
-             WHERE (f.pk_user1 = ? OR f.pk_user2 = ?)
+                         JOIN user u ON (CASE WHEN f.pkfk_user1 = ? THEN f.pkfk_user2 ELSE f.pkfk_user1 END) = u.pk_username
+                         WHERE (f.pkfk_user1 = ? OR f.pkfk_user2 = ?)
                AND (u.pk_username LIKE ? OR u.firstName LIKE ? OR u.lastName LIKE ? OR CONCAT(u.firstName, ' ', u.lastName) LIKE ?)
              ORDER BY u.firstName ASC, u.lastName ASC
              LIMIT 30"

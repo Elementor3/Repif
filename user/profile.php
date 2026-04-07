@@ -94,7 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     (string)($pendingEmailChange['new_email'] ?? '')
                 );
                 if ($ok) {
-                    $stmt = $conn->prepare("UPDATE user SET email_verified=1, email_verified_at=NOW() WHERE pk_username=?");
+                    $stmt = $conn->prepare("UPDATE user SET isEmailVerified=1, emailVerifiedAt=NOW() WHERE pk_username=?");
                     $stmt->bind_param("s", $username);
                     $stmt->execute();
 
@@ -119,7 +119,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $current = $_POST['current_password'] ?? '';
         $new = $_POST['new_password'] ?? '';
         $confirm = $_POST['confirm_password'] ?? '';
-        if (!password_verify($current, $user['password_hash'])) {
+        if (!password_verify($current, $user['passwordHash'])) {
             $err = t('invalid_credentials');
         } elseif (strlen($new) < 6) {
             $err = t('password_min_length');
