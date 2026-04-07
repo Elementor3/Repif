@@ -65,10 +65,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Stations
     elseif ($action === 'create_station') {
         $serial = trim($_POST['serial'] ?? '');
-        $name = trim($_POST['name'] ?? '');
-        $desc = trim($_POST['description'] ?? '');
-        if ($serial && $name) {
-            if (adminCreateStation($conn, $serial, $name, $desc, $username)) {
+        if ($serial) {
+            if (adminCreateStation($conn, $serial, $username)) {
                 $msg = t('success');
             } else {
                 $err = t('error_occurred');
@@ -368,8 +366,7 @@ function detectPostAudience(array $recipients, array $allUsernames, array $regul
                 <input type="hidden" name="action" value="create_station">
                 <div class="modal-body">
                     <div class="mb-3"><label class="form-label"><?= t('station_serial') ?></label><input type="text" name="serial" class="form-control" required></div>
-                    <div class="mb-3"><label class="form-label"><?= t('name') ?></label><input type="text" name="name" class="form-control" required></div>
-                    <div class="mb-3"><label class="form-label"><?= t('description') ?></label><textarea name="description" class="form-control" rows="2"></textarea></div>
+                    <div class="form-text"><?= t('name') ?> / <?= t('description') ?> / <?= t('registered_by') ?> <?= t('edit') ?> modal.</div>
                 </div>
                 <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><?= t('cancel') ?></button><button type="submit" class="btn btn-primary"><?= t('create') ?></button></div>
             </form>

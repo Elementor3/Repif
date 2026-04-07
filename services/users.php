@@ -20,7 +20,7 @@ function getUserByEmail(mysqli $conn, string $email): ?array {
 function createUser(mysqli $conn, string $username, string $firstName, string $lastName, string $email, string $password, string $role = 'User'): bool {
     $hash = password_hash($password, PASSWORD_DEFAULT);
     $now = date('Y-m-d H:i:s');
-    $stmt = $conn->prepare("INSERT INTO user (pk_username, firstName, lastName, email, password_hash, role, createdAt) VALUES (?,?,?,?,?,?,?)");
+    $stmt = $conn->prepare("INSERT INTO user (pk_username, firstName, lastName, email, passwordHash, role, createdAt) VALUES (?,?,?,?,?,?,?)");
     $stmt->bind_param("sssssss", $username, $firstName, $lastName, $email, $hash, $role, $now);
     return $stmt->execute();
 }
@@ -32,7 +32,7 @@ function updateUserProfile(mysqli $conn, string $username, string $firstName, st
 }
 
 function updateUserPassword(mysqli $conn, string $username, string $newPasswordHash): bool {
-    $stmt = $conn->prepare("UPDATE user SET password_hash=? WHERE pk_username=?");
+    $stmt = $conn->prepare("UPDATE user SET passwordHash=? WHERE pk_username=?");
     $stmt->bind_param("ss", $newPasswordHash, $username);
     return $stmt->execute();
 }
@@ -75,7 +75,7 @@ function adminCreateUser(mysqli $conn, string $username, string $firstName, stri
 function adminUpdateUser(mysqli $conn, string $username, string $firstName, string $lastName, string $email, string $role, ?string $newPassword = null): bool {
     if ($newPassword) {
         $hash = password_hash($newPassword, PASSWORD_DEFAULT);
-        $stmt = $conn->prepare("UPDATE user SET firstName=?, lastName=?, email=?, role=?, password_hash=? WHERE pk_username=?");
+        $stmt = $conn->prepare("UPDATE user SET firstName=?, lastName=?, email=?, role=?, passwordHash=? WHERE pk_username=?");
         $stmt->bind_param("ssssss", $firstName, $lastName, $email, $role, $hash, $username);
     } else {
         $stmt = $conn->prepare("UPDATE user SET firstName=?, lastName=?, email=?, role=? WHERE pk_username=?");

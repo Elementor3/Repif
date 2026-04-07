@@ -16,9 +16,9 @@ if (!$username || !$fileId) {
 $mode = $_GET['mode'] ?? 'download';
 // Find message with this id and ensure it has a file
 $stmt = $conn->prepare(
-    "SELECT m.file_path, m.file_name, m.fk_conversation
+    "SELECT m.filePath AS file_path, m.fileName AS file_name, m.fk_conversation
      FROM chat_message m
-     WHERE m.pk_messageID = ? AND m.file_path IS NOT NULL"
+     WHERE m.pk_messageID = ? AND m.filePath IS NOT NULL"
 );
 $stmt->bind_param("i", $fileId);
 $stmt->execute();

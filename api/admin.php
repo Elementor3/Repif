@@ -78,20 +78,18 @@ switch ($action) {
         $username = trim($_GET['username'] ?? '');
         $user = getUserByUsername($conn, $username);
         if (!$user) { echo json_encode(['success' => false]); exit; }
-        unset($user['password_hash']);
+        unset($user['passwordHash']);
         echo json_encode(['success' => true, 'user' => $user]);
         break;
 
     // --- STATIONS ---
     case 'create_station':
         $serial      = trim($_POST['serial'] ?? '');
-        $name        = trim($_POST['name'] ?? '');
-        $description = trim($_POST['description'] ?? '');
         $createdBy   = trim($_POST['createdBy'] ?? $_SESSION['username']);
-        if (!$serial || !$name) {
+        if (!$serial) {
             echo json_encode(['success' => false, 'message' => 'Missing fields']); exit;
         }
-        $ok = adminCreateStation($conn, $serial, $name, $description, $createdBy);
+        $ok = adminCreateStation($conn, $serial, $createdBy);
         echo json_encode(['success' => $ok]);
         break;
 

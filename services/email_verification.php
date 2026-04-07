@@ -5,20 +5,20 @@ function ensureEmailVerificationSchema(mysqli $conn): void {
     $db = $dbRes ? ($dbRes->fetch_assoc()['db'] ?? '') : '';
     if ($db === '') return;
 
-    $checkVerified = $conn->prepare("SELECT COUNT(*) AS cnt FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME='user' AND COLUMN_NAME='email_verified'");
+    $checkVerified = $conn->prepare("SELECT COUNT(*) AS cnt FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME='user' AND COLUMN_NAME='isEmailVerified'");
     $checkVerified->bind_param('s', $db);
     $checkVerified->execute();
     $hasVerified = (int)($checkVerified->get_result()->fetch_assoc()['cnt'] ?? 0) > 0;
     if (!$hasVerified) {
-        $conn->query("ALTER TABLE user ADD COLUMN email_verified TINYINT NOT NULL DEFAULT 0 AFTER email");
+        $conn->query("ALTER TABLE user ADD COLUMN isEmailVerified TINYINT(1) NOT NULL DEFAULT 0 AFTER email");
     }
 
-    $checkVerifiedAt = $conn->prepare("SELECT COUNT(*) AS cnt FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME='user' AND COLUMN_NAME='email_verified_at'");
+    $checkVerifiedAt = $conn->prepare("SELECT COUNT(*) AS cnt FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME='user' AND COLUMN_NAME='emailVerifiedAt'");
     $checkVerifiedAt->bind_param('s', $db);
     $checkVerifiedAt->execute();
     $hasVerifiedAt = (int)($checkVerifiedAt->get_result()->fetch_assoc()['cnt'] ?? 0) > 0;
     if (!$hasVerifiedAt) {
-        $conn->query("ALTER TABLE user ADD COLUMN email_verified_at DATETIME NULL AFTER email_verified");
+        $conn->query("ALTER TABLE user ADD COLUMN emailVerifiedAt DATETIME NULL AFTER isEmailVerified");
     }
 
     $conn->query("CREATE TABLE IF NOT EXISTS email_verification (
@@ -56,7 +56,7 @@ function verifyEmailToken(mysqli $conn, string $token): bool {
 
     $username = $row['fk_user'];
 
-    $stmtUser = $conn->prepare("UPDATE user SET email_verified=1, email_verified_at=NOW() WHERE pk_username=?");
+    $stmtUser = $conn->prepare("UPDATE user SET isEmailVerified=1, emailVerifiedAt=NOW() WHERE pk_username=?");
     $stmtUser->bind_param('s', $username);
     $okUser = $stmtUser->execute();
 

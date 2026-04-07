@@ -15,10 +15,7 @@ $myStations = getUserStationsList($conn, $username);
 $myCollections = getUserCollections($conn, $username);
 $myFriends = getFriends($conn, $username);
 
-$totalMeasurements = 0;
-foreach ($myStations as $st) {
-    $totalMeasurements += countMeasurements($conn, ['station' => $st['pk_serialNumber']]);
-}
+$totalMeasurements = countMeasurements($conn, ['owner_id' => $username]);
 
 // Get latest measurement per station
 $stationData = [];

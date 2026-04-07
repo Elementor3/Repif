@@ -56,7 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pendingRegistration['email'],
                 $pendingRegistration['password']
             )) {
-                $stmt = $conn->prepare("UPDATE user SET email_verified=1, email_verified_at=NOW() WHERE pk_username=?");
+                $stmt = $conn->prepare("UPDATE user SET isEmailVerified=1, emailVerifiedAt=NOW() WHERE pk_username=?");
                 $stmt->bind_param("s", $pendingRegistration['username']);
                 $stmt->execute();
 

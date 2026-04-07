@@ -2,7 +2,7 @@
 require_once __DIR__ . '/collections.php';
 
 function getFriends(mysqli $conn, string $username): array {
-    $stmt = $conn->prepare("SELECT u.* FROM friendship f JOIN user u ON (CASE WHEN f.pk_user1 = ? THEN f.pk_user2 ELSE f.pk_user1 END) = u.pk_username WHERE f.pk_user1 = ? OR f.pk_user2 = ?");
+    $stmt = $conn->prepare("SELECT u.* FROM friendship f JOIN user u ON (CASE WHEN f.pkfk_user1 = ? THEN f.pkfk_user2 ELSE f.pkfk_user1 END) = u.pk_username WHERE f.pkfk_user1 = ? OR f.pkfk_user2 = ?");
     $stmt->bind_param("sss", $username, $username, $username);
     $stmt->execute();
     return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
@@ -11,7 +11,7 @@ function getFriends(mysqli $conn, string $username): array {
 function areFriends(mysqli $conn, string $user1, string $user2): bool {
     $a = min($user1, $user2);
     $b = max($user1, $user2);
-    $stmt = $conn->prepare("SELECT 1 FROM friendship WHERE pk_user1 = ? AND pk_user2 = ?");
+    $stmt = $conn->prepare("SELECT 1 FROM friendship WHERE pkfk_user1 = ? AND pkfk_user2 = ?");
     $stmt->bind_param("ss", $a, $b);
     $stmt->execute();
     return $stmt->get_result()->num_rows > 0;
@@ -40,7 +40,7 @@ function acceptRequest(mysqli $conn, int $requestId, string $username): bool {
     $a = min($req['fk_sender'], $req['fk_receiver']);
     $b = max($req['fk_sender'], $req['fk_receiver']);
     $now = date('Y-m-d H:i:s');
-    $ins = $conn->prepare("INSERT IGNORE INTO friendship (pk_user1, pk_user2, createdAt) VALUES (?,?,?)");
+    $ins = $conn->prepare("INSERT IGNORE INTO friendship (pkfk_user1, pkfk_user2, createdAt) VALUES (?,?,?)");
     $ins->bind_param("sss", $a, $b, $now);
     $ins->execute();
     $upd = $conn->prepare("UPDATE request SET status='accepted' WHERE pk_requestID=?");
@@ -55,7 +55,7 @@ function rejectRequest(mysqli $conn, int $requestId, string $username): bool {
 }
 
 function cancelOutgoingRequest(mysqli $conn, int $requestId, string $username): bool {
-    $stmt = $conn->prepare("UPDATE request SET status='cancelled' WHERE pk_requestID=? AND fk_sender=? AND status='pending'");
+    $stmt = $conn->prepare("DELETE FROM request WHERE pk_requestID=? AND fk_sender=? AND status='pending'");
     $stmt->bind_param("is", $requestId, $username);
     $stmt->execute();
     return $stmt->affected_rows === 1;
@@ -64,7 +64,7 @@ function cancelOutgoingRequest(mysqli $conn, int $requestId, string $username): 
 function removeFriend(mysqli $conn, string $user1, string $user2): bool {
     $a = min($user1, $user2);
     $b = max($user1, $user2);
-    $stmt = $conn->prepare("DELETE FROM friendship WHERE pk_user1=? AND pk_user2=?");
+    $stmt = $conn->prepare("DELETE FROM friendship WHERE pkfk_user1=? AND pkfk_user2=?");
     $stmt->bind_param("ss", $a, $b);
     $ok = $stmt->execute();
     if ($ok) {

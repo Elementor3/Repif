@@ -2,7 +2,7 @@
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../services/measurements.php';
-require_once __DIR__ . '/../services/stations.php';
+require_once __DIR__ . '/../services/collections.php';
 
 header('Content-Type: application/json');
 
@@ -15,8 +15,12 @@ if (!isLoggedIn()) {
 $username = $_SESSION['username'];
 $request = $_SERVER['REQUEST_METHOD'] === 'POST' ? $_POST : $_GET;
 $action = $request['action'] ?? '';
-$myStations = getUserStationsList($conn, $username);
+$myStations = getStationsFromOwnedMeasurements($conn, $username);
 $stationSerials = array_column($myStations, 'pk_serialNumber');
+$myCollections = getUserCollectionsForMeasurements($conn, $username);
+$collectionIds = array_map(static function ($row) {
+    return (int)($row['pk_collectionID'] ?? 0);
+}, $myCollections);
 
 if ($action === 'chart' || $action === 'poll') {
     $filters = [
@@ -24,7 +28,7 @@ if ($action === 'chart' || $action === 'poll') {
         'collection' => $_GET['collection'] ?? '',
         'date_from' => $_GET['date_from'] ?? '',
         'date_to' => $_GET['date_to'] ?? '',
-        'allowed_stations' => $stationSerials,
+        'owner_id' => $username,
     ];
 
     if ($filters['station'] && !in_array($filters['station'], $stationSerials)) {
@@ -33,7 +37,7 @@ if ($action === 'chart' || $action === 'poll') {
 
     if ($filters['collection'] !== '') {
         $filters['collection'] = (int)$filters['collection'];
-        if ($filters['collection'] <= 0) {
+        if ($filters['collection'] <= 0 || !in_array($filters['collection'], $collectionIds, true)) {
             $filters['collection'] = '';
         }
     }
@@ -93,7 +97,7 @@ if ($action === 'chart' || $action === 'poll') {
         $ids = [$ids];
     }
 
-    $deleted = deleteMeasurementsByIds($conn, $ids, $stationSerials);
+    $deleted = deleteMeasurementsByIds($conn, $ids, $username);
     echo json_encode([
         'success' => true,
         'deleted' => $deleted,

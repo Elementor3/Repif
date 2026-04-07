@@ -40,20 +40,20 @@ function getNotifications(mysqli $conn, string $username, int $limit = 50): arra
 }
 
 function getUnreadCount(mysqli $conn, string $username): int {
-    $stmt = $conn->prepare("SELECT COUNT(*) AS cnt FROM notification WHERE fk_user = ? AND is_read = 0");
+    $stmt = $conn->prepare("SELECT COUNT(*) AS cnt FROM notification WHERE fk_user = ? AND isRead = 0");
     $stmt->bind_param("s", $username);
     $stmt->execute();
     return (int)$stmt->get_result()->fetch_assoc()['cnt'];
 }
 
 function markAsRead(mysqli $conn, int $notificationId, string $username): bool {
-    $stmt = $conn->prepare("UPDATE notification SET is_read=1 WHERE pk_notificationID=? AND fk_user=?");
+    $stmt = $conn->prepare("UPDATE notification SET isRead=1 WHERE pk_notificationID=? AND fk_user=?");
     $stmt->bind_param("is", $notificationId, $username);
     return $stmt->execute();
 }
 
 function markAllAsRead(mysqli $conn, string $username): bool {
-    $stmt = $conn->prepare("UPDATE notification SET is_read=1 WHERE fk_user=?");
+    $stmt = $conn->prepare("UPDATE notification SET isRead=1 WHERE fk_user=?");
     $stmt->bind_param("s", $username);
     return $stmt->execute();
 }
