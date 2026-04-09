@@ -12,6 +12,41 @@ $myCollections = getUserCollectionsForMeasurements($conn, $username);
 $stationSerials = array_column($myStations, 'pk_serialNumber');
 $myCollectionIds = array_map('intval', array_column($myCollections, 'pk_collectionID'));
 
+function normalizeMeasurementDateTimeInput(string $value, bool $isEnd): string {
+    $value = trim($value);
+    if ($value === '') {
+        return '';
+    }
+
+    $formats = ['d.m.Y H:i', 'Y-m-d H:i:s', 'Y-m-d H:i'];
+    foreach ($formats as $format) {
+        $dt = DateTime::createFromFormat($format, $value);
+        if ($dt instanceof DateTime) {
+            return $dt->format('Y-m-d H:i:s');
+        }
+    }
+
+    $dateOnlyFormats = ['d.m.Y', 'Y-m-d'];
+    foreach ($dateOnlyFormats as $format) {
+        $dt = DateTime::createFromFormat($format, $value);
+        if ($dt instanceof DateTime) {
+            if ($isEnd) {
+                $dt->setTime(23, 59, 59);
+            } else {
+                $dt->setTime(0, 0, 0);
+            }
+            return $dt->format('Y-m-d H:i:s');
+        }
+    }
+
+    try {
+        $dt = new DateTime($value);
+        return $dt->format('Y-m-d H:i:s');
+    } catch (Throwable $e) {
+        return '';
+    }
+}
+
 // Filters
 $filters = [
     'station' => $_GET['station'] ?? '',
@@ -20,19 +55,46 @@ $filters = [
     'date_to' => $_GET['date_to'] ?? '',
 ];
 
+$normalizedFilters = $filters;
+$normalizedFilters['date_from'] = normalizeMeasurementDateTimeInput((string)$filters['date_from'], false);
+$normalizedFilters['date_to'] = normalizeMeasurementDateTimeInput((string)$filters['date_to'], true);
+
+$returnToRaw = (string)($_GET['return_to'] ?? '');
+$returnTo = '';
+if ($returnToRaw !== '' && strpos($returnToRaw, '/user/') === 0) {
+    $returnTo = $returnToRaw;
+}
+
 // Only allow stations owned by user
 if ($filters['station'] && !in_array($filters['station'], $stationSerials, true)) {
     $filters['station'] = '';
+    $normalizedFilters['station'] = '';
 }
 
 if ($filters['collection'] !== '') {
     $filters['collection'] = (int)$filters['collection'];
     if ($filters['collection'] <= 0 || !in_array($filters['collection'], $myCollectionIds, true)) {
         $filters['collection'] = '';
+        $normalizedFilters['collection'] = '';
     }
 }
 
-$filtersWithAccess = array_merge($filters, ['owner_id' => $username]);
+$normalizedFilters['station'] = $filters['station'];
+$normalizedFilters['collection'] = $filters['collection'];
+$ownerFilter = $username;
+if (!empty($filters['collection'])) {
+    foreach ($myCollections as $collectionRow) {
+        if ((int)($collectionRow['pk_collectionID'] ?? 0) === (int)$filters['collection']) {
+            $collectionOwner = (string)($collectionRow['fk_user'] ?? '');
+            if ($collectionOwner !== '' && $collectionOwner !== $username) {
+                $ownerFilter = '';
+            }
+            break;
+        }
+    }
+}
+
+$filtersWithAccess = array_merge($normalizedFilters, ['owner_id' => $ownerFilter]);
 
 function slugifyFilenamePart(string $value): string {
     $value = trim($value);
@@ -58,7 +120,10 @@ function formatDateForFilename(string $value): string {
         return '';
     }
 
-    $dt = DateTime::createFromFormat('Y-m-d', $value);
+    $dt = DateTime::createFromFormat('Y-m-d H:i:s', normalizeMeasurementDateTimeInput($value, false));
+    if (!$dt) {
+        $dt = DateTime::createFromFormat('Y-m-d', $value);
+    }
     if (!$dt) {
         return '';
     }
@@ -119,6 +184,10 @@ require_once __DIR__ . '/../includes/header.php';
             height: 440px !important;
         }
     }
+
+    .measurement-picker-icon {
+        cursor: pointer;
+    }
 </style>
 <?php
 
@@ -136,6 +205,13 @@ $to = min($page * $perPage, $total);
 $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from : 0, $to, $total], t('pagination_info'));
 ?>
 <h2 class="mb-4"><i class="bi bi-graph-up me-2"></i><?= t('measurements') ?></h2>
+<?php if ($returnTo !== ''): ?>
+<div class="mb-3">
+    <a href="<?= e($returnTo) ?>" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left me-1"></i><?= t('back') ?>
+    </a>
+</div>
+<?php endif; ?>
 
 <!-- Filter Card -->
 <div class="card filter-card mb-4">
@@ -164,12 +240,18 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
                 </select>
             </div>
             <div class="col-12 col-sm-6 col-lg-auto">
-                <label class="form-label"><?= t('date_from') ?></label>
-                <input type="date" name="date_from" class="form-control form-control-sm" value="<?= e($filters['date_from']) ?>">
+                <label class="form-label"><?= t('start_datetime_pipe') ?></label>
+                <div class="input-group input-group-sm">
+                    <input type="text" name="date_from" class="form-control form-control-sm js-measurement-datetime" value="<?= e($filters['date_from']) ?>" autocomplete="off" placeholder="DD.MM.YYYY HH:mm">
+                    <span class="input-group-text slot-picker-icon measurement-picker-icon" aria-hidden="true"><i class="bi bi-calendar-event"></i></span>
+                </div>
             </div>
             <div class="col-12 col-sm-6 col-lg-auto">
-                <label class="form-label"><?= t('date_to') ?></label>
-                <input type="date" name="date_to" class="form-control form-control-sm" value="<?= e($filters['date_to']) ?>">
+                <label class="form-label"><?= t('end_datetime_pipe') ?></label>
+                <div class="input-group input-group-sm">
+                    <input type="text" name="date_to" class="form-control form-control-sm js-measurement-datetime" value="<?= e($filters['date_to']) ?>" autocomplete="off" placeholder="DD.MM.YYYY HH:mm">
+                    <span class="input-group-text slot-picker-icon measurement-picker-icon" aria-hidden="true"><i class="bi bi-calendar-event"></i></span>
+                </div>
             </div>
             <div class="col-12 col-lg-auto d-flex gap-1">
                 <button type="button" id="clearMeasurementFiltersBtn" class="btn btn-outline-secondary btn-sm"><?= t('clear') ?></button>
@@ -358,6 +440,148 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
     var chartStationSearchQuery = '';
     var chartStationPickerCollapse = null;
     var chartStationColorAssignments = {};
+    var measurementFiltersStateKey = 'measurements.filters.state.v1';
+
+    function normalizeFilterDateTimeForApi(value) {
+        var raw = String(value || '').trim();
+        if (!raw) {
+            return '';
+        }
+
+        var eu = raw.match(/^(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2})$/);
+        if (eu) {
+            return eu[3] + '-' + eu[2] + '-' + eu[1] + ' ' + eu[4] + ':' + eu[5];
+        }
+
+        return raw;
+    }
+
+    function normalizeFilterDateToFilename(value) {
+        var normalized = normalizeFilterDateTimeForApi(value);
+        var m = String(normalized || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (m) {
+            return m[3] + m[2] + m[1];
+        }
+
+        m = String(value || '').match(/^(\d{2})\.(\d{2})\.(\d{4})/);
+        return m ? (m[1] + m[2] + m[3]) : '';
+    }
+
+    function initMeasurementDateTimePickers() {
+        if (!window.jQuery || !jQuery.fn.datetimepicker) {
+            return;
+        }
+
+        jQuery('.js-measurement-datetime').each(function () {
+            var $input = jQuery(this);
+            if ($input.data('dtp-initialized')) {
+                return;
+            }
+
+            $input.datetimepicker({
+                format: 'd.m.Y H:i',
+                step: 5,
+                dayOfWeekStart: 1,
+                scrollInput: false,
+                closeOnDateSelect: false
+            });
+            $input.data('dtp-initialized', true);
+        });
+
+        jQuery('.measurement-picker-icon').off('click.measurementPicker').on('click.measurementPicker', function () {
+            var $icon = jQuery(this);
+            var $input = $icon.siblings('input.js-measurement-datetime').first();
+            if (!$input.length) {
+                $input = $icon.closest('.input-group').find('input.js-measurement-datetime').first();
+            }
+            if ($input.length) {
+                $input.trigger('focus');
+                try {
+                    $input.datetimepicker('show');
+                } catch (e) {
+                    // Keep focus fallback when explicit show is unavailable.
+                }
+            }
+        });
+    }
+
+    function saveMeasurementFiltersState() {
+        var form = document.getElementById('measurementFiltersForm');
+        if (!form || !window.sessionStorage) {
+            return;
+        }
+
+        var payload = {
+            station: (form.querySelector('[name="station"]') || {}).value || '',
+            collection: (form.querySelector('[name="collection"]') || {}).value || '',
+            date_from: (form.querySelector('[name="date_from"]') || {}).value || '',
+            date_to: (form.querySelector('[name="date_to"]') || {}).value || '',
+            ts: Date.now()
+        };
+
+        try {
+            sessionStorage.setItem(measurementFiltersStateKey, JSON.stringify(payload));
+        } catch (e) {
+            // Ignore storage write errors.
+        }
+    }
+
+    function clearMeasurementFiltersState() {
+        if (!window.sessionStorage) {
+            return;
+        }
+        try {
+            sessionStorage.removeItem(measurementFiltersStateKey);
+        } catch (e) {
+            // Ignore storage remove errors.
+        }
+    }
+
+    function restoreMeasurementFiltersStateIfNeeded() {
+        var form = document.getElementById('measurementFiltersForm');
+        if (!form || !window.sessionStorage) {
+            return false;
+        }
+
+        var stationField = form.querySelector('[name="station"]');
+        var collectionField = form.querySelector('[name="collection"]');
+        var dateFromField = form.querySelector('[name="date_from"]');
+        var dateToField = form.querySelector('[name="date_to"]');
+        if (!stationField || !collectionField || !dateFromField || !dateToField) {
+            return false;
+        }
+
+        var hasInitialValues = !!(stationField.value || collectionField.value || dateFromField.value || dateToField.value);
+        if (hasInitialValues) {
+            return false;
+        }
+
+        var raw = '';
+        try {
+            raw = sessionStorage.getItem(measurementFiltersStateKey) || '';
+        } catch (e) {
+            return false;
+        }
+        if (!raw) {
+            return false;
+        }
+
+        var payload;
+        try {
+            payload = JSON.parse(raw);
+        } catch (e) {
+            return false;
+        }
+        if (!payload || typeof payload !== 'object') {
+            return false;
+        }
+
+        stationField.value = String(payload.station || '');
+        collectionField.value = String(payload.collection || '');
+        dateFromField.value = String(payload.date_from || '');
+        dateToField.value = String(payload.date_to || '');
+        return true;
+    }
 
     async function getJson(url) {
         var response = await fetch(url, {
@@ -430,8 +654,7 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
     }
 
     function formatDateInputForFilename(value) {
-        var m = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
-        return m ? (m[3] + m[2] + m[1]) : '';
+        return normalizeFilterDateToFilename(value);
     }
 
     function getSelectedFilterLabel(fieldName) {
@@ -488,7 +711,11 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
                 return;
             }
             if (value !== '') {
-                params.set(key, value);
+                if (key === 'date_from' || key === 'date_to') {
+                    params.set(key, normalizeFilterDateTimeForApi(value));
+                } else {
+                    params.set(key, value);
+                }
             }
         });
 
@@ -1341,8 +1568,12 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
         });
     }
 
+    initMeasurementDateTimePickers();
+    var restoredMeasurementFilters = restoreMeasurementFiltersStateIfNeeded();
+
     document.getElementById('measurementFiltersForm').addEventListener('submit', function (e) {
         e.preventDefault();
+        saveMeasurementFiltersState();
         applyFiltersWithoutReload();
     });
 
@@ -1353,7 +1584,18 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
         }
 
         if (target.name === 'station' || target.name === 'collection' || target.name === 'date_from' || target.name === 'date_to') {
+            saveMeasurementFiltersState();
             applyFiltersWithoutReload();
+        }
+    });
+
+    document.getElementById('measurementFiltersForm').addEventListener('input', function (e) {
+        var target = e.target;
+        if (!target || !target.name) {
+            return;
+        }
+        if (target.name === 'station' || target.name === 'collection' || target.name === 'date_from' || target.name === 'date_to') {
+            saveMeasurementFiltersState();
         }
     });
 
@@ -1383,6 +1625,7 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
                 dateToField.value = '';
             }
 
+            clearMeasurementFiltersState();
             applyFiltersWithoutReload();
         });
     }
@@ -1453,6 +1696,9 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
 
     // Table is already server-rendered on first load, so skip immediate poll request.
     ensureSelectedMetric();
+    if (restoredMeasurementFilters) {
+        applyFiltersWithoutReload();
+    }
     if (isChartsTabActive()) {
         ensureChartInstance();
         loadChartData(true);

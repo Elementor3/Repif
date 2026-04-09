@@ -18,6 +18,12 @@ function getUserCollectionsForMeasurements(mysqli $conn, string $username): arra
          WHERE c.fk_user = ?
             OR EXISTS (
                 SELECT 1
+                FROM shares s
+                WHERE s.pkfk_collection = c.pk_collectionID
+                  AND s.pkfk_user = ?
+            )
+            OR EXISTS (
+                SELECT 1
                 FROM contains ct
                 JOIN measurement m ON m.pk_measurementID = ct.pkfk_measurement
                 WHERE ct.pkfk_collection = c.pk_collectionID
@@ -25,7 +31,7 @@ function getUserCollectionsForMeasurements(mysqli $conn, string $username): arra
             )
          ORDER BY c.createdAt DESC"
     );
-    $stmt->bind_param('ss', $username, $username);
+    $stmt->bind_param('sss', $username, $username, $username);
     $stmt->execute();
 
     return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
@@ -68,6 +74,46 @@ function addSample(mysqli $conn, int $collectionId, string $station, string $sta
     return $stmt2->execute();
 }
 
+function isValidSlotRange(string $start, string $end): bool {
+    try {
+        $startDt = new DateTime($start);
+        $endDt = new DateTime($end);
+        return $startDt < $endDt;
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
+function hasOverlappingSlot(mysqli $conn, int $collectionId, string $station, string $start, string $end, ?int $excludeSampleId = null): bool {
+    if ($excludeSampleId !== null && $excludeSampleId > 0) {
+        $stmt = $conn->prepare(
+            "SELECT 1
+             FROM slot
+             WHERE fk_collection = ?
+                             AND fk_station = ?
+               AND pk_sampleID <> ?
+                             AND startDateTime <= ?
+                             AND endDateTime >= ?
+             LIMIT 1"
+        );
+                $stmt->bind_param("isiss", $collectionId, $station, $excludeSampleId, $end, $start);
+    } else {
+        $stmt = $conn->prepare(
+            "SELECT 1
+             FROM slot
+             WHERE fk_collection = ?
+                             AND fk_station = ?
+                             AND startDateTime <= ?
+                             AND endDateTime >= ?
+             LIMIT 1"
+        );
+                $stmt->bind_param("isss", $collectionId, $station, $end, $start);
+    }
+
+    $stmt->execute();
+    return (bool)$stmt->get_result()->fetch_row();
+}
+
 function removeSample(mysqli $conn, int $sampleId): bool {
     $stmt = $conn->prepare("DELETE FROM slot WHERE pk_sampleID=?");
     $stmt->bind_param("i", $sampleId);
@@ -93,28 +139,6 @@ function getSamples(mysqli $conn, int $collectionId): array {
     return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 }
 
-function getCollectionMeasurements(mysqli $conn, int $collectionId): array {
-    $stmt = $conn->prepare(
-        "SELECT m.*,
-                COALESCE(
-                    NULLIF((SELECT h1.name
-                                                        FROM ownership_history h1
-                            WHERE h1.fk_serialNumber = m.fk_station
-                                                            AND h1.fk_ownerId = m.fk_ownerId
-                                                        ORDER BY h1.registeredAt DESC, h1.pk_id DESC
-                            LIMIT 1), ''),
-                    m.fk_station
-                ) AS station_name
-         FROM measurement m
-         JOIN contains c ON m.pk_measurementID = c.pkfk_measurement
-         WHERE c.pkfk_collection = ?
-         ORDER BY m.timestamp DESC"
-    );
-    $stmt->bind_param("i", $collectionId);
-    $stmt->execute();
-    return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-}
-
 function shareCollection(mysqli $conn, int $collectionId, string $withUsername): bool {
     $stmt = $conn->prepare("INSERT IGNORE INTO shares (pkfk_user, pkfk_collection) VALUES (?,?)");
     $stmt->bind_param("si", $withUsername, $collectionId);
@@ -128,14 +152,14 @@ function unshareCollection(mysqli $conn, int $collectionId, string $username): b
 }
 
 function getSharedCollections(mysqli $conn, string $username): array {
-    $stmt = $conn->prepare("SELECT c.*, u.firstName, u.lastName, u.pk_username AS owner_username FROM collection c JOIN shares s ON c.pk_collectionID = s.pkfk_collection JOIN user u ON c.fk_user = u.pk_username WHERE s.pkfk_user = ?");
+    $stmt = $conn->prepare("SELECT c.*, u.firstName, u.lastName, u.avatar AS owner_avatar, u.pk_username AS owner_username FROM collection c JOIN shares s ON c.pk_collectionID = s.pkfk_collection JOIN user u ON c.fk_user = u.pk_username WHERE s.pkfk_user = ?");
     $stmt->bind_param("s", $username);
     $stmt->execute();
     return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 }
 
 function getCollectionShares(mysqli $conn, int $collectionId): array {
-    $stmt = $conn->prepare("SELECT u.pk_username, u.firstName, u.lastName FROM shares s JOIN user u ON s.pkfk_user = u.pk_username WHERE s.pkfk_collection = ?");
+    $stmt = $conn->prepare("SELECT u.pk_username, u.firstName, u.lastName, u.avatar FROM shares s JOIN user u ON s.pkfk_user = u.pk_username WHERE s.pkfk_collection = ?");
     $stmt->bind_param("i", $collectionId);
     $stmt->execute();
     return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);

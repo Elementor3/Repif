@@ -133,6 +133,22 @@ function markConversationRead(mysqli $conn, int $conversationId, string $usernam
     }
 
     $targetId = $upToMessageId;
+
+    if ($targetId !== null && $targetId > 0) {
+        $existsStmt = $conn->prepare(
+            "SELECT 1
+             FROM chat_message
+             WHERE pk_messageID = ? AND fk_conversation = ?
+             LIMIT 1"
+        );
+        $existsStmt->bind_param("ii", $targetId, $conversationId);
+        $existsStmt->execute();
+        $exists = (bool)$existsStmt->get_result()->fetch_assoc();
+        if (!$exists) {
+            $targetId = null;
+        }
+    }
+
     if ($targetId === null) {
         $maxStmt = $conn->prepare("SELECT COALESCE(MAX(pk_messageID), 0) AS max_id FROM chat_message WHERE fk_conversation = ?");
         $maxStmt->bind_param("i", $conversationId);
@@ -140,15 +156,20 @@ function markConversationRead(mysqli $conn, int $conversationId, string $usernam
         $targetId = (int)($maxStmt->get_result()->fetch_assoc()['max_id'] ?? 0);
     }
 
+    $targetForSql = max(0, (int)$targetId);
+
     $now = date('Y-m-d H:i:s');
     $stmt = $conn->prepare(
         "INSERT INTO chat_read_state (fk_conversation, fk_user, lastReadMessageId, updatedAt)
-         VALUES (?, ?, ?, ?)
+         VALUES (?, ?, NULLIF(?, 0), ?)
          ON DUPLICATE KEY UPDATE
-            lastReadMessageId = GREATEST(COALESCE(lastReadMessageId, 0), VALUES(lastReadMessageId)),
+            lastReadMessageId = CASE
+                WHEN VALUES(lastReadMessageId) IS NULL THEN lastReadMessageId
+                ELSE GREATEST(COALESCE(lastReadMessageId, 0), VALUES(lastReadMessageId))
+            END,
             updatedAt = VALUES(updatedAt)"
     );
-    $stmt->bind_param("isis", $conversationId, $username, $targetId, $now);
+    $stmt->bind_param("isis", $conversationId, $username, $targetForSql, $now);
     $stmt->execute();
 }
 
