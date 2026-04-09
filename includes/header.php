@@ -52,8 +52,17 @@ $currentPage = basename($_SERVER['PHP_SELF']);
     <?php if ($currentPage === 'friends.php'): ?>
     <link rel="stylesheet" href="/assets/css/friends.css">
     <?php endif; ?>
-    <?php if ($currentPage === 'stations.php'): ?>
+    <?php if ($currentPage === 'stations.php' || $currentPage === 'collections.php'): ?>
     <link rel="stylesheet" href="/assets/css/stations.css">
+    <?php endif; ?>
+    <?php if ($currentPage === 'collections.php'): ?>
+    <link rel="stylesheet" href="/assets/css/collections.css">
+    <?php endif; ?>
+    <?php if ($currentPage === 'measurements.php'): ?>
+    <link rel="stylesheet" href="/assets/css/measurements.css">
+    <?php endif; ?>
+    <?php if ($currentPage === 'collections.php' || $currentPage === 'measurements.php'): ?>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jquery-datetimepicker@2.5.21/build/jquery.datetimepicker.min.css">
     <?php endif; ?>
     <?php if ($currentPage === 'chat.php'): ?>
     <link rel="stylesheet" href="/assets/css/chat.css">

@@ -9,10 +9,14 @@ function getFriends(mysqli $conn, string $username): array {
 }
 
 function areFriends(mysqli $conn, string $user1, string $user2): bool {
-    $a = min($user1, $user2);
-    $b = max($user1, $user2);
-    $stmt = $conn->prepare("SELECT 1 FROM friendship WHERE pkfk_user1 = ? AND pkfk_user2 = ?");
-    $stmt->bind_param("ss", $a, $b);
+    $stmt = $conn->prepare(
+        "SELECT 1
+         FROM friendship
+         WHERE (pkfk_user1 = ? AND pkfk_user2 = ?)
+            OR (pkfk_user1 = ? AND pkfk_user2 = ?)
+         LIMIT 1"
+    );
+    $stmt->bind_param("ssss", $user1, $user2, $user2, $user1);
     $stmt->execute();
     return $stmt->get_result()->num_rows > 0;
 }
@@ -62,10 +66,12 @@ function cancelOutgoingRequest(mysqli $conn, int $requestId, string $username): 
 }
 
 function removeFriend(mysqli $conn, string $user1, string $user2): bool {
-    $a = min($user1, $user2);
-    $b = max($user1, $user2);
-    $stmt = $conn->prepare("DELETE FROM friendship WHERE pkfk_user1=? AND pkfk_user2=?");
-    $stmt->bind_param("ss", $a, $b);
+    $stmt = $conn->prepare(
+        "DELETE FROM friendship
+         WHERE (pkfk_user1 = ? AND pkfk_user2 = ?)
+            OR (pkfk_user1 = ? AND pkfk_user2 = ?)"
+    );
+    $stmt->bind_param("ssss", $user1, $user2, $user2, $user1);
     $ok = $stmt->execute();
     if ($ok) {
         unshareAllBetweenUsers($conn, $user1, $user2);

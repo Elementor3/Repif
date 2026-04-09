@@ -8,6 +8,33 @@ requireLogin();
 
 $username = $_SESSION['username'];
 $msg = '';
+$backParam = trim((string)($_GET['back'] ?? ''));
+
+function resolveSafeChatBackUrl(string $candidate): string {
+    if ($candidate === '') {
+        return '';
+    }
+
+    $parts = parse_url($candidate);
+    if ($parts === false) {
+        return '';
+    }
+
+    if (isset($parts['scheme']) || isset($parts['host'])) {
+        return '';
+    }
+
+    $path = (string)($parts['path'] ?? '');
+    if ($path === '' || strncmp($path, '/user/', 6) !== 0) {
+        return '';
+    }
+
+    $query = isset($parts['query']) ? ('?' . $parts['query']) : '';
+    return $path . $query;
+}
+
+$chatBackUrl = resolveSafeChatBackUrl($backParam);
+$chatBackQuery = $chatBackUrl !== '' ? ('&back=' . urlencode($chatBackUrl)) : '';
 
 // Handle opening a private chat with a friend
 if (isset($_GET['with'])) {
@@ -18,9 +45,13 @@ if (isset($_GET['with'])) {
         $stmt->execute();
         $exists = (bool)$stmt->get_result()->fetch_assoc();
         if ($exists) {
-        $convId = getOrCreatePrivateConversation($conn, $username, $withUser);
-        header("Location: /user/chat.php?conv=$convId");
-        exit;
+            $convId = getOrCreatePrivateConversation($conn, $username, $withUser);
+            $redirectUrl = '/user/chat.php?conv=' . (int)$convId;
+            if ($chatBackUrl !== '') {
+                $redirectUrl .= '&back=' . urlencode($chatBackUrl);
+            }
+            header('Location: ' . $redirectUrl);
+            exit;
         }
     }
 }
@@ -33,7 +64,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $members = (array)($_POST['members'] ?? []);
         if ($name) {
             $convId = createGroupConversation($conn, $name, $description, $username, $members);
-            header("Location: /user/chat.php?conv=$convId");
+            $redirectUrl = '/user/chat.php?conv=' . (int)$convId;
+            if ($chatBackUrl !== '') {
+                $redirectUrl .= '&back=' . urlencode($chatBackUrl);
+            }
+            header('Location: ' . $redirectUrl);
             exit;
         }
     }
@@ -124,7 +159,14 @@ $renderSystemText = function (array $message): string {
     return '';
 };
 ?>
-<h2 class="mb-3"><i class="bi bi-chat-dots me-2"></i><?= t('chat') ?></h2>
+<div class="d-flex align-items-center mb-3 gap-2">
+    <?php if ($chatBackUrl !== ''): ?>
+        <a href="<?= e($chatBackUrl) ?>" class="btn btn-outline-secondary btn-sm" id="chatPageBackBtn">
+            <i class="bi bi-arrow-left me-1"></i><?= t('back') ?>
+        </a>
+    <?php endif; ?>
+    <h2 class="mb-0"><i class="bi bi-chat-dots me-2"></i><?= t('chat') ?></h2>
+</div>
 
 <div class="chat-container <?= $activeConv ? 'chat-mobile-open' : '' ?>" id="chatContainer">
     <!-- Sidebar -->
@@ -141,7 +183,7 @@ $renderSystemText = function (array $message): string {
                 <div class="text-center text-muted py-4 small"><?= t('no_conversations') ?></div>
             <?php else: ?>
                 <?php foreach ($conversations as $c): ?>
-                    <a href="/user/chat.php?conv=<?= $c['pk_conversationID'] ?>" data-conv-id="<?= (int)$c['pk_conversationID'] ?>" class="text-decoration-none chat-conv-item <?= $activeConvId == $c['pk_conversationID'] ? 'active' : '' ?>">
+                    <a href="/user/chat.php?conv=<?= $c['pk_conversationID'] ?><?= e($chatBackQuery) ?>" data-conv-id="<?= (int)$c['pk_conversationID'] ?>" class="text-decoration-none chat-conv-item <?= $activeConvId == $c['pk_conversationID'] ? 'active' : '' ?>">
                         <?php if ($c['type'] === 'group' && ($convGroupAvatarUrl = getGroupAvatarUrl((string)($c['avatar'] ?? ''), (int)$c['pk_conversationID']))): ?>
                             <img src="<?= e($convGroupAvatarUrl) ?>" class="conv-avatar" alt="avatar">
                         <?php elseif ($c['type'] === 'group'): ?>
@@ -435,6 +477,7 @@ $renderSystemText = function (array $message): string {
         currentUser: <?= json_encode($username) ?>,
         activeConvId: <?= (int)$activeConvId ?>,
         initialLastMsgId: <?= !empty($initialMessages) ? (int)end($initialMessages)['pk_messageID'] : 0 ?>,
+        backUrl: <?= json_encode($chatBackUrl) ?>,
         i18n: {
             viewProfileTitle: <?= json_encode(t('view_profile')) ?>,
             errorText: <?= json_encode(t('error_occurred')) ?>,

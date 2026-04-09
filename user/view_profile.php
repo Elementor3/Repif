@@ -49,6 +49,11 @@ if (!$profile) {
     exit;
 }
 
+$chatBackUrl = '/user/view_profile.php?user=' . urlencode($viewUsername);
+if ($backUrl !== '') {
+    $chatBackUrl .= '&back=' . urlencode($backUrl);
+}
+
 $isFriend = areFriends($conn, $username, $viewUsername);
 
 require_once __DIR__ . '/../includes/header.php';
@@ -72,7 +77,7 @@ require_once __DIR__ . '/../includes/header.php';
                 <?php if ($isFriend): ?>
                 <span class="badge bg-success mb-2"><i class="bi bi-people-fill me-1"></i><?= t('friends') ?></span>
                 <div class="d-flex gap-2 justify-content-center mt-2">
-                    <a href="/user/chat.php?with=<?= urlencode($viewUsername) ?>" class="btn btn-primary btn-sm">
+                    <a href="<?= e('/user/chat.php?with=' . urlencode($viewUsername) . '&back=' . urlencode($chatBackUrl)) ?>" class="btn btn-primary btn-sm">
                         <i class="bi bi-chat me-1"></i><?= t('chat') ?>
                     </a>
                 </div>

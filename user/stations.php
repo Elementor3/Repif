@@ -147,6 +147,7 @@ require_once __DIR__ . '/../includes/header.php';
 
 $stations = getUserStationsList($conn, $username);
 $pastStations = getUserPastStationsList($conn, $username);
+$currentPageUrl = (string)($_SERVER['REQUEST_URI'] ?? '/user/stations.php');
 ?>
 <div class="d-flex justify-content-between align-items-center mb-4 gap-2">
     <h2 class="mb-0"><i class="bi bi-broadcast-pin me-2"></i><?= t('stations') ?></h2>
@@ -174,6 +175,7 @@ $pastStations = getUserPastStationsList($conn, $username);
     data-delete-label="<?= e(t('delete')) ?>"
     data-confirm-delete="<?= e(t('confirm_delete')) ?>"
     data-default-error="<?= e(t('error_occurred')) ?>"
+    data-return-to="<?= e($currentPageUrl) ?>"
 ></div>
 
 <h5 class="mb-3"><?= e(t('current_stations')) ?></h5>
@@ -203,7 +205,7 @@ $pastStations = getUserPastStationsList($conn, $username);
                     <button class="btn btn-outline-primary js-edit-station" title="<?= e(t('edit')) ?>" data-serial="<?= e($st['pk_serialNumber']) ?>" data-name="<?= e($st['name'] ?? '') ?>" data-description="<?= e($st['description'] ?? '') ?>" data-scope="active">
                         <i class="bi bi-pencil"></i>
                     </button>
-                    <a href="/user/measurements.php?station=<?= urlencode($st['pk_serialNumber']) ?>" class="btn btn-outline-secondary" title="<?= e(t('measurements')) ?>">
+                    <a href="/user/measurements.php?station=<?= urlencode($st['pk_serialNumber']) ?>&return_to=<?= urlencode($currentPageUrl) ?>" class="btn btn-outline-secondary" title="<?= e(t('measurements')) ?>">
                         <i class="bi bi-graph-up"></i>
                     </a>
                     <form method="post" class="d-inline js-unregister-form" onsubmit="return confirm('<?= t('confirm_delete') ?>')">
@@ -248,7 +250,7 @@ $pastStations = getUserPastStationsList($conn, $username);
                     <button class="btn btn-outline-primary js-edit-station" title="<?= e(t('edit')) ?>" data-serial="<?= e($st['pk_serialNumber']) ?>" data-name="<?= e($st['name'] ?? '') ?>" data-description="<?= e($st['description'] ?? '') ?>" data-scope="past">
                         <i class="bi bi-pencil"></i>
                     </button>
-                    <a href="/user/measurements.php?station=<?= urlencode($st['pk_serialNumber']) ?>" class="btn btn-outline-secondary" title="<?= e(t('measurements')) ?>">
+                    <a href="/user/measurements.php?station=<?= urlencode($st['pk_serialNumber']) ?>&return_to=<?= urlencode($currentPageUrl) ?>" class="btn btn-outline-secondary" title="<?= e(t('measurements')) ?>">
                         <i class="bi bi-graph-up"></i>
                     </a>
                 </div>

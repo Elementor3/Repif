@@ -114,7 +114,7 @@ $outgoingRequests = array_values(array_filter($pendingRequests, function ($r) {
                             <a href="/user/view_profile.php?user=<?= urlencode($f['pk_username']) ?>&back=<?= urlencode('/user/friends.php') ?>" class="btn btn-sm btn-outline-secondary">
                                 <i class="bi bi-person"></i>
                             </a>
-                            <a href="/user/chat.php?with=<?= urlencode($f['pk_username']) ?>" class="btn btn-sm btn-outline-primary">
+                            <a href="/user/chat.php?with=<?= urlencode($f['pk_username']) ?>&back=<?= urlencode('/user/friends.php') ?>" class="btn btn-sm btn-outline-primary">
                                 <i class="bi bi-chat"></i>
                             </a>
                             <button type="button" class="btn btn-sm btn-outline-danger js-remove-friend" data-friend="<?= e($f['pk_username']) ?>" title="<?= e(t('remove')) ?>">

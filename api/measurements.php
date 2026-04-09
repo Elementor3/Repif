@@ -15,6 +15,42 @@ if (!isLoggedIn()) {
 $username = $_SESSION['username'];
 $request = $_SERVER['REQUEST_METHOD'] === 'POST' ? $_POST : $_GET;
 $action = $request['action'] ?? '';
+
+function normalizeMeasurementFilterDateTime(string $value, bool $isEnd): string {
+    $value = trim($value);
+    if ($value === '') {
+        return '';
+    }
+
+    $formats = ['d.m.Y H:i', 'Y-m-d H:i:s', 'Y-m-d H:i'];
+    foreach ($formats as $format) {
+        $dt = DateTime::createFromFormat($format, $value);
+        if ($dt instanceof DateTime) {
+            return $dt->format('Y-m-d H:i:s');
+        }
+    }
+
+    $dateOnlyFormats = ['d.m.Y', 'Y-m-d'];
+    foreach ($dateOnlyFormats as $format) {
+        $dt = DateTime::createFromFormat($format, $value);
+        if ($dt instanceof DateTime) {
+            if ($isEnd) {
+                $dt->setTime(23, 59, 59);
+            } else {
+                $dt->setTime(0, 0, 0);
+            }
+            return $dt->format('Y-m-d H:i:s');
+        }
+    }
+
+    try {
+        $dt = new DateTime($value);
+        return $dt->format('Y-m-d H:i:s');
+    } catch (Throwable $e) {
+        return '';
+    }
+}
+
 $myStations = getStationsFromOwnedMeasurements($conn, $username);
 $stationSerials = array_column($myStations, 'pk_serialNumber');
 $myCollections = getUserCollectionsForMeasurements($conn, $username);
@@ -26,8 +62,8 @@ if ($action === 'chart' || $action === 'poll') {
     $filters = [
         'station' => $_GET['station'] ?? '',
         'collection' => $_GET['collection'] ?? '',
-        'date_from' => $_GET['date_from'] ?? '',
-        'date_to' => $_GET['date_to'] ?? '',
+        'date_from' => normalizeMeasurementFilterDateTime((string)($_GET['date_from'] ?? ''), false),
+        'date_to' => normalizeMeasurementFilterDateTime((string)($_GET['date_to'] ?? ''), true),
         'owner_id' => $username,
     ];
 
@@ -39,6 +75,16 @@ if ($action === 'chart' || $action === 'poll') {
         $filters['collection'] = (int)$filters['collection'];
         if ($filters['collection'] <= 0 || !in_array($filters['collection'], $collectionIds, true)) {
             $filters['collection'] = '';
+        } else {
+            foreach ($myCollections as $collectionRow) {
+                if ((int)($collectionRow['pk_collectionID'] ?? 0) === (int)$filters['collection']) {
+                    $collectionOwner = (string)($collectionRow['fk_user'] ?? '');
+                    if ($collectionOwner !== '' && $collectionOwner !== $username) {
+                        $filters['owner_id'] = '';
+                    }
+                    break;
+                }
+            }
         }
     }
 

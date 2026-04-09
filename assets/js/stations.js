@@ -13,7 +13,8 @@
 		measurementsLabel: i18nEl ? (i18nEl.getAttribute('data-measurements-label') || 'Measurements') : 'Measurements',
 		deleteLabel: i18nEl ? (i18nEl.getAttribute('data-delete-label') || 'Delete') : 'Delete',
 		confirmDelete: i18nEl ? (i18nEl.getAttribute('data-confirm-delete') || 'Are you sure?') : 'Are you sure?',
-		defaultError: i18nEl ? (i18nEl.getAttribute('data-default-error') || 'Error occurred') : 'Error occurred'
+		defaultError: i18nEl ? (i18nEl.getAttribute('data-default-error') || 'Error occurred') : 'Error occurred',
+		returnTo: i18nEl ? (i18nEl.getAttribute('data-return-to') || (window.location.pathname + window.location.search)) : (window.location.pathname + window.location.search)
 	};
 
 	function escapeHtml(value) {
@@ -235,6 +236,8 @@
 		var desc = escapeHtml(rawDesc);
 		var registeredAt = escapeHtml(formatDateTimeValue(data.registeredAt || ''));
 
+		var measurementsUrl = '/user/measurements.php?station=' + encodeURIComponent(data.serial || '') + '&return_to=' + encodeURIComponent(i18n.returnTo || (window.location.pathname + window.location.search));
+
 		return '' +
 			'<div class="col-12 col-sm-6 col-lg-4 col-xl-3">' +
 			'<div class="card station-list-card h-100" data-station-card="' + serial + '" data-station-scope="active">' +
@@ -253,7 +256,7 @@
 			'<div class="card-footer bg-transparent border-top-0 pt-1">' +
 			'<div class="d-flex gap-2 station-card-actions">' +
 			'<button class="btn btn-outline-primary js-edit-station" title="' + escapeHtml(i18n.editLabel) + '" data-serial="' + serial + '" data-name="' + escapeHtml(data.name || '') + '" data-description="' + escapeHtml(data.description || '') + '" data-scope="active"><i class="bi bi-pencil"></i></button>' +
-			'<a href="/user/measurements.php?station=' + encodeURIComponent(data.serial || '') + '" class="btn btn-outline-secondary" title="' + escapeHtml(i18n.measurementsLabel) + '"><i class="bi bi-graph-up"></i></a>' +
+			'<a href="' + measurementsUrl + '" class="btn btn-outline-secondary" title="' + escapeHtml(i18n.measurementsLabel) + '"><i class="bi bi-graph-up"></i></a>' +
 			'<form method="post" class="d-inline js-unregister-form" onsubmit="return confirm(\'' + escapeHtml(i18n.confirmDelete) + '\')">' +
 			'<input type="hidden" name="action" value="unregister">' +
 			'<input type="hidden" name="serial" value="' + serial + '">' +
@@ -270,6 +273,8 @@
 		var desc = escapeHtml(rawDesc);
 		var registeredAt = escapeHtml(formatDateTimeValue(data.registeredAt || ''));
 		var unregisteredAt = escapeHtml(formatDateTimeValue(data.unregisteredAt || ''));
+
+		var measurementsUrl = '/user/measurements.php?station=' + encodeURIComponent(data.serial || '') + '&return_to=' + encodeURIComponent(i18n.returnTo || (window.location.pathname + window.location.search));
 
 		return '' +
 			'<div class="col-12 col-sm-6 col-lg-4 col-xl-3">' +
@@ -291,7 +296,7 @@
 			'<div class="card-footer bg-transparent border-top-0 pt-1">' +
 			'<div class="d-flex gap-2 station-card-actions">' +
 			'<button class="btn btn-outline-primary js-edit-station" title="' + escapeHtml(i18n.editLabel) + '" data-serial="' + serial + '" data-name="' + escapeHtml(data.name || '') + '" data-description="' + escapeHtml(data.description || '') + '" data-scope="past"><i class="bi bi-pencil"></i></button>' +
-			'<a href="/user/measurements.php?station=' + encodeURIComponent(data.serial || '') + '" class="btn btn-outline-secondary" title="' + escapeHtml(i18n.measurementsLabel) + '"><i class="bi bi-graph-up"></i></a>' +
+			'<a href="' + measurementsUrl + '" class="btn btn-outline-secondary" title="' + escapeHtml(i18n.measurementsLabel) + '"><i class="bi bi-graph-up"></i></a>' +
 			'</div></div></div></div>';
 	}
 

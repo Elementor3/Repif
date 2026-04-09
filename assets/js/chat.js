@@ -7,6 +7,7 @@
 	var chatCurrentUser = window.chatPageData.currentUser;
 	var chatConvIdInitial = Number(window.chatPageData.activeConvId || 0);
 	var chatLastMsgIdInitial = Number(window.chatPageData.initialLastMsgId || 0);
+	var chatBackUrl = String(window.chatPageData.backUrl || '').trim();
 	var i18n = window.chatPageData.i18n || {};
 
 	var chatViewProfileTitle = String(i18n.viewProfileTitle || '');
@@ -46,6 +47,19 @@
 			back += '?conv=' + encodeURIComponent(convId);
 		}
 		return '&back=' + encodeURIComponent(back);
+	}
+
+	function buildChatPageUrl(convId) {
+		var url = '/user/chat.php';
+		if (convId) {
+			url += '?conv=' + encodeURIComponent(convId);
+		}
+
+		if (chatBackUrl !== '') {
+			url += (url.indexOf('?') >= 0 ? '&' : '?') + 'back=' + encodeURIComponent(chatBackUrl);
+		}
+
+		return url;
 	}
 
 	function isDeletedUserMarker(value) {
@@ -567,7 +581,7 @@
 				$.each(chats, function (_, c) {
 					var convId = Number(c.pk_conversationID);
 					var activeClass = (chatConvId === convId) ? ' active' : '';
-					html += '<a href="/user/chat.php?conv=' + convId + '" data-conv-id="' + convId + '" class="text-decoration-none chat-conv-item' + activeClass + '">';
+					html += '<a href="' + buildChatPageUrl(convId) + '" data-conv-id="' + convId + '" class="text-decoration-none chat-conv-item' + activeClass + '">';
 					if ((c.type || '') === 'group') {
 						html += c.avatar_url
 							? '<img src="' + esc(c.avatar_url) + '" class="conv-avatar" alt="avatar">'
@@ -647,7 +661,7 @@
 				renderConversationMain(conv, res.messages || [], res.draft_text || '', res.draft_files || []);
 				setMobilePane(true);
 				if (pushHistory) {
-					window.history.pushState({ conv: chatConvId }, '', '/user/chat.php?conv=' + chatConvId);
+					window.history.pushState({ conv: chatConvId }, '', buildChatPageUrl(chatConvId));
 				}
 				loadUnreadCounts();
 				restoreGroupInfoFromStateIfNeeded();
@@ -972,7 +986,7 @@
 					chatLastMsgId = 0;
 					setMobilePane(false);
 					renderEmptyMain();
-					window.history.pushState({}, '', '/user/chat.php');
+					window.history.pushState({}, '', buildChatPageUrl(0));
 					loadChatsList();
 					loadUnreadCounts();
 				} else {

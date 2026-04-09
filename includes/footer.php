@@ -13,5 +13,14 @@
 <?php if (basename($_SERVER['PHP_SELF']) === 'chat.php'): ?>
 <script src="/assets/js/chat.js"></script>
 <?php endif; ?>
+<?php if (basename($_SERVER['PHP_SELF']) === 'collections.php' || basename($_SERVER['PHP_SELF']) === 'measurements.php'): ?>
+<script src="https://cdn.jsdelivr.net/npm/jquery-datetimepicker@2.5.21/build/jquery.datetimepicker.full.min.js"></script>
+<?php endif; ?>
+<?php if (basename($_SERVER['PHP_SELF']) === 'collections.php'): ?>
+<script src="/assets/js/collections.js"></script>
+<?php endif; ?>
+<?php if (basename($_SERVER['PHP_SELF']) === 'measurements.php'): ?>
+<script src="/assets/js/measurements.js"></script>
+<?php endif; ?>
 </body>
 </html>
