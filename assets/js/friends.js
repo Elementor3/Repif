@@ -71,7 +71,7 @@ $(function () {
             html += '</div>';
             html += '<div class="d-flex gap-1">';
             html += '<a href="/user/view_profile.php?user=' + encodeURIComponent(f.pk_username) + '&back=' + backToFriends + '" class="btn btn-sm btn-outline-secondary" title="' + esc($friendsResults.data('view-profile-label')) + '"><i class="bi bi-person"></i></a>';
-            html += '<a href="/user/chat.php?with=' + encodeURIComponent(f.pk_username) + '" class="btn btn-sm btn-outline-primary" title="' + esc($friendsResults.data('chat-label')) + '"><i class="bi bi-chat"></i></a>';
+            html += '<a href="/user/chat.php?with=' + encodeURIComponent(f.pk_username) + '&back=' + backToFriends + '" class="btn btn-sm btn-outline-primary" title="' + esc($friendsResults.data('chat-label')) + '"><i class="bi bi-chat"></i></a>';
             html += '<button type="button" class="btn btn-sm btn-outline-danger js-remove-friend" data-friend="' + esc(f.pk_username) + '" title="' + esc($friendsResults.data('remove-label')) + '"><i class="bi bi-x-lg"></i></button>';
             html += '</div></div>';
         });
@@ -147,7 +147,7 @@ $(function () {
             html += '<div class="d-flex align-items-center gap-2">' + avatarMarkup(user.avatar || '', user.pk_username || '', 32, 'fs-4') + '<span>' + esc((user.firstName || '') + ' ' + (user.lastName || '')) + ' <small class="text-muted">@' + esc(user.pk_username) + '</small></span></div>';
             html += '<div class="d-flex align-items-center gap-1">';
             html += '<a href="/user/view_profile.php?user=' + encodeURIComponent(user.pk_username) + '&back=' + backToFriends + '" class="btn btn-sm btn-outline-secondary" title="' + esc($friendsResults.data('view-profile-label')) + '"><i class="bi bi-person"></i></a>';
-            html += '<a href="/user/chat.php?with=' + encodeURIComponent(user.pk_username) + '" class="btn btn-sm btn-outline-primary" title="' + esc($friendsResults.data('chat-label')) + '"><i class="bi bi-chat"></i></a>';
+            html += '<a href="/user/chat.php?with=' + encodeURIComponent(user.pk_username) + '&back=' + backToFriends + '" class="btn btn-sm btn-outline-primary" title="' + esc($friendsResults.data('chat-label')) + '"><i class="bi bi-chat"></i></a>';
             html += buildActionHtml(user);
             html += '</div></div>';
         });

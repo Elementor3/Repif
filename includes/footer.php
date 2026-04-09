@@ -19,5 +19,8 @@
 <?php if (basename($_SERVER['PHP_SELF']) === 'collections.php'): ?>
 <script src="/assets/js/collections.js"></script>
 <?php endif; ?>
+<?php if (basename($_SERVER['PHP_SELF']) === 'measurements.php'): ?>
+<script src="/assets/js/measurements.js"></script>
+<?php endif; ?>
 </body>
 </html>

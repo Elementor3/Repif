@@ -280,8 +280,13 @@
         var profileUrl = String(friend.profileUrl || '#');
         var backUrl = (options && options.backUrl) ? String(options.backUrl) : '';
 
+        if (backUrl === '') {
+            backUrl = String(i18nGlobal.returnTo || '').trim();
+        }
+
         if (backUrl !== '') {
             profileUrl = buildUrlWithBackParam(profileUrl, backUrl);
+            chatUrl = buildUrlWithBackParam(chatUrl, backUrl);
         }
 
         return '' +

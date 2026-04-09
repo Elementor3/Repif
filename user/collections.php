@@ -27,8 +27,13 @@ function buildProfileUrlWithBack(string $username, string $back): string {
     return '/user/view_profile.php?user=' . urlencode($username) . '&back=' . urlencode($back);
 }
 
-function buildChatUrl(string $username): string {
-    return '/user/chat.php?with=' . urlencode($username);
+function buildChatUrl(string $username, ?string $back = null): string {
+    $backUrl = $back;
+    if ($backUrl === null || $backUrl === '') {
+        $backUrl = (string)($_SERVER['REQUEST_URI'] ?? '/user/collections.php');
+    }
+
+    return '/user/chat.php?with=' . urlencode($username) . '&back=' . urlencode((string)$backUrl);
 }
 
 function formatSlotDateTimeForFilter(string $datetime): string {
