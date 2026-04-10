@@ -1,8 +1,17 @@
-(function () {
+function initMeasurementsClient() {
+    if (typeof window.__measurementsCleanup === 'function') {
+        window.__measurementsCleanup();
+    }
+
     var cfgEl = document.getElementById('measurementsClientConfig');
     if (!cfgEl) {
         return;
     }
+
+    if (cfgEl.dataset.initialized === '1') {
+        return;
+    }
+    cfgEl.dataset.initialized = '1';
 
     var config = {};
     try {
@@ -11,9 +20,13 @@
         config = {};
     }
 
+    var apiEndpoint = String(config.apiEndpoint || '/api/measurements.php');
+    var pagePath = String(config.pagePath || '/user/measurements.php');
+
     var currentPage = Number(config.page || 1);
     var perPage = Number(config.perPage || 20);
     var pollTimer = null;
+    var chartPollTimer = null;
     var chartInstance = null;
     var selectedChartMetric = 'temperature';
     var paginationTemplate = String(config.paginationTemplate || 'Showing {from} to {to} of {total}');
@@ -663,7 +676,7 @@
         var params = getFilterParams();
         params.set('page', String(currentPage));
         params.set('per_page', String(perPage));
-        window.history.replaceState({}, '', '/user/measurements.php?' + params.toString());
+        window.history.replaceState({}, '', pagePath + '?' + params.toString());
     }
 
     function updateExportLink() {
@@ -1306,7 +1319,7 @@
         params.set('_ts', Date.now());
 
         try {
-            var res = await getJson('/api/measurements.php?' + params.toString());
+            var res = await getJson(apiEndpoint + '?' + params.toString());
             if (!res || !res.success) {
                 return;
             }
@@ -1349,7 +1362,7 @@
         params.set('_ts', Date.now());
 
         try {
-            var res = await getJson('/api/measurements.php?' + params.toString());
+            var res = await getJson(apiEndpoint + '?' + params.toString());
             if (!res || !res.success) {
                 return;
             }
@@ -1651,7 +1664,7 @@
         loadChartData(true);
     }
     pollTimer = setInterval(pollMeasurements, 10000);
-    var chartPollTimer = setInterval(function () {
+    chartPollTimer = setInterval(function () {
         if (isChartsTabActive()) {
             loadChartData(true);
         }
@@ -1700,12 +1713,19 @@
         updateUrlState();
     });
 
-    window.addEventListener('beforeunload', function () {
+    window.__measurementsCleanup = function () {
         if (pollTimer) {
             clearInterval(pollTimer);
+            pollTimer = null;
         }
         if (chartPollTimer) {
             clearInterval(chartPollTimer);
+            chartPollTimer = null;
         }
-    });
-})();
+    };
+
+    window.addEventListener('beforeunload', window.__measurementsCleanup);
+}
+
+window.initMeasurementsClient = initMeasurementsClient;
+initMeasurementsClient();

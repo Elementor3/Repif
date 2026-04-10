@@ -801,6 +801,108 @@
         }, 10000);
     }
 
+    function scheduleSharedTabLiveRefresh() {
+        window.setInterval(function () {
+            if (document.hidden) {
+                return;
+            }
+
+            if ($('#editCollectionId').length) {
+                return;
+            }
+
+            var params = new URLSearchParams(window.location.search || '');
+            var tab = params.get('tab') || 'mine';
+            if (tab !== 'shared') {
+                return;
+            }
+
+            if ($('.modal.show').length > 0) {
+                return;
+            }
+
+            var activeEl = document.activeElement;
+            if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT' || activeEl.isContentEditable)) {
+                return;
+            }
+
+            var url = new URL(window.location.href);
+            url.searchParams.set('_live', String(Date.now()));
+
+            $.ajax({
+                url: url.toString(),
+                type: 'GET',
+                dataType: 'html',
+                cache: false
+            }).done(function (html) {
+                var parser = new DOMParser();
+                var doc = parser.parseFromString(String(html || ''), 'text/html');
+                var incoming = doc.getElementById('sharedCollectionsTabContent');
+                var current = document.getElementById('sharedCollectionsTabContent');
+                if (!incoming || !current) {
+                    return;
+                }
+                current.innerHTML = incoming.innerHTML;
+
+                var stamp = String(Date.now());
+                current.querySelectorAll('img.share-user-avatar[src]').forEach(function (img) {
+                    var raw = String(img.getAttribute('src') || '').trim();
+                    if (raw === '') {
+                        return;
+                    }
+                    try {
+                        var u = new URL(raw, window.location.origin);
+                        u.searchParams.set('_live', stamp);
+                        img.setAttribute('src', u.pathname + u.search);
+                    } catch (e) {
+                        // keep original src on parse failures
+                    }
+                });
+            });
+        }, 15000);
+    }
+
+    function loadCollectionsTabByUrl(rawUrl, pushHistory) {
+        if ($('#editCollectionId').length) {
+            return;
+        }
+
+        var url = new URL(rawUrl, window.location.origin);
+        url.searchParams.set('_tab_ajax', '1');
+
+        $.ajax({
+            url: url.toString(),
+            type: 'GET',
+            dataType: 'html',
+            cache: false
+        }).done(function (html) {
+            var parser = new DOMParser();
+            var doc = parser.parseFromString(String(html || ''), 'text/html');
+            var incomingNav = doc.getElementById('collectionsTabsNav');
+            var incomingContent = doc.getElementById('collectionsTabContent');
+            var currentNav = document.getElementById('collectionsTabsNav');
+            var currentContent = document.getElementById('collectionsTabContent');
+            if (!incomingNav || !incomingContent || !currentNav || !currentContent) {
+                window.location.href = rawUrl;
+                return;
+            }
+
+            currentNav.innerHTML = incomingNav.innerHTML;
+            currentContent.innerHTML = incomingContent.innerHTML;
+
+            initDateTimeInputs();
+            renderAllCollectionCardSharePreviews();
+
+            if (pushHistory) {
+                var clean = new URL(rawUrl, window.location.origin);
+                clean.searchParams.delete('_tab_ajax');
+                history.pushState({ tab: clean.searchParams.get('tab') || 'mine' }, '', clean.pathname + clean.search);
+            }
+        }).fail(function () {
+            window.location.href = rawUrl;
+        });
+    }
+
     function pad2(num) {
         return String(num).padStart(2, '0');
     }
@@ -882,6 +984,7 @@
         initDateTimeInputs();
         renderAllCollectionCardSharePreviews();
         scheduleLiveShareRefresh(i18n);
+        scheduleSharedTabLiveRefresh();
 
         var previewResizeTimer = null;
         $(window).on('resize.collectionsSharePreview', function () {
@@ -891,6 +994,19 @@
             previewResizeTimer = setTimeout(function () {
                 renderAllCollectionCardSharePreviews();
             }, 120);
+        });
+
+        $(document).on('click', '#collectionsTabsNav a.js-collections-tab-link', function (e) {
+            var href = String($(this).attr('href') || '').trim();
+            if (href === '' || href.indexOf('#') === 0 || href.indexOf('javascript:') === 0) {
+                return;
+            }
+            e.preventDefault();
+            loadCollectionsTabByUrl(href, true);
+        });
+
+        $(window).on('popstate.collectionsTabs', function () {
+            loadCollectionsTabByUrl(window.location.href, false);
         });
 
         $('#createCollectionForm').on('submit', function (e) {

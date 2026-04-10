@@ -61,7 +61,10 @@ $currentPage = basename($_SERVER['PHP_SELF']);
     <?php if ($currentPage === 'measurements.php'): ?>
     <link rel="stylesheet" href="/assets/css/measurements.css">
     <?php endif; ?>
-    <?php if ($currentPage === 'collections.php' || $currentPage === 'measurements.php'): ?>
+    <?php if ($currentPage === 'panel.php'): ?>
+    <link rel="stylesheet" href="/assets/css/admin_panel.css">
+    <?php endif; ?>
+    <?php if ($currentPage === 'collections.php' || $currentPage === 'measurements.php' || $currentPage === 'panel.php'): ?>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jquery-datetimepicker@2.5.21/build/jquery.datetimepicker.min.css">
     <?php endif; ?>
     <?php if ($currentPage === 'chat.php'): ?>

@@ -7,8 +7,27 @@ require_once __DIR__ . '/../services/collections.php';
 requireLogin();
 
 $username = $_SESSION['username'];
-$myStations = getStationsFromOwnedMeasurements($conn, $username);
-$myCollections = getUserCollectionsForMeasurements($conn, $username);
+$isAdminAll = isAdmin() && (string)($_GET['admin_all'] ?? '') === '1';
+
+if ($isAdminAll) {
+    $myStations = $conn->query(
+        "SELECT DISTINCT m.fk_station AS pk_serialNumber,
+                COALESCE(
+                    NULLIF((SELECT h1.name
+                            FROM ownership_history h1
+                            WHERE h1.fk_serialNumber = m.fk_station
+                            ORDER BY (h1.unregisteredAt IS NULL) DESC, h1.registeredAt DESC, h1.pk_id DESC
+                            LIMIT 1), ''),
+                    m.fk_station
+                ) AS name
+         FROM measurement m
+         ORDER BY name ASC"
+    )->fetch_all(MYSQLI_ASSOC);
+    $myCollections = $conn->query("SELECT * FROM collection ORDER BY createdAt DESC")->fetch_all(MYSQLI_ASSOC);
+} else {
+    $myStations = getStationsFromOwnedMeasurements($conn, $username);
+    $myCollections = getUserCollectionsForMeasurements($conn, $username);
+}
 $stationSerials = array_column($myStations, 'pk_serialNumber');
 $myCollectionIds = array_map('intval', array_column($myCollections, 'pk_collectionID'));
 
@@ -81,8 +100,8 @@ if ($filters['collection'] !== '') {
 
 $normalizedFilters['station'] = $filters['station'];
 $normalizedFilters['collection'] = $filters['collection'];
-$ownerFilter = $username;
-if (!empty($filters['collection'])) {
+$ownerFilter = $isAdminAll ? '' : $username;
+if (!$isAdminAll && !empty($filters['collection'])) {
     foreach ($myCollections as $collectionRow) {
         if ((int)($collectionRow['pk_collectionID'] ?? 0) === (int)$filters['collection']) {
             $collectionOwner = (string)($collectionRow['fk_user'] ?? '');
@@ -311,6 +330,9 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
 <div class="card filter-card mb-4">
     <div class="card-body">
         <form method="get" class="row g-2 align-items-end" id="measurementFiltersForm">
+            <?php if ($isAdminAll): ?>
+            <input type="hidden" name="admin_all" value="1">
+            <?php endif; ?>
             <div class="col-12 col-lg-auto">
                 <label class="form-label"><?= t('collection') ?></label>
                 <div class="position-relative">
@@ -400,7 +422,7 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
                     <option value="<?= $pp ?>" <?= $perPage === $pp ? 'selected' : '' ?>><?= $pp ?></option>
                     <?php endforeach; ?>
                 </select>
-                <a id="dataExportCsvBtn" href="?<?= http_build_query(array_merge($filters, ['export' => 'csv'])) ?>" class="btn btn-sm btn-outline-secondary text-nowrap">
+                <a id="dataExportCsvBtn" href="?<?= http_build_query(array_merge($filters, $isAdminAll ? ['admin_all' => '1'] : [], ['export' => 'csv'])) ?>" class="btn btn-sm btn-outline-secondary text-nowrap">
                     <i class="bi bi-download me-1"></i><?= t('export_csv') ?>
                 </a>
             </div>
@@ -448,7 +470,7 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
             <ul class="pagination pagination-sm justify-content-center" id="measurementsPaginationList">
                 <?php for ($i = 1; $i <= $totalPages; $i++): ?>
                 <li class="page-item <?= $i === $page ? 'active' : '' ?>">
-                    <a class="page-link measurement-page-link" data-page="<?= $i ?>" href="?<?= http_build_query(array_merge($filters, ['page' => $i, 'per_page' => $perPage])) ?>"><?= $i ?></a>
+                    <a class="page-link measurement-page-link" data-page="<?= $i ?>" href="?<?= http_build_query(array_merge($filters, $isAdminAll ? ['admin_all' => '1'] : [], ['page' => $i, 'per_page' => $perPage])) ?>"><?= $i ?></a>
                 </li>
                 <?php endfor; ?>
             </ul>
@@ -475,7 +497,7 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
                     </button>
                 </div>
                 <div class="col">
-                    <a id="chartExportCsvBtn" href="?<?= http_build_query(array_merge($filters, ['export' => 'csv'])) ?>" class="btn btn-sm btn-outline-secondary w-100 h-100 text-nowrap">
+                    <a id="chartExportCsvBtn" href="?<?= http_build_query(array_merge($filters, $isAdminAll ? ['admin_all' => '1'] : [], ['export' => 'csv'])) ?>" class="btn btn-sm btn-outline-secondary w-100 h-100 text-nowrap">
                         <i class="bi bi-download me-1"></i><?= t('export_csv') ?>
                     </a>
                 </div>
@@ -536,6 +558,8 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
             'metricKey' => 'airQuality',
         ],
     ],
+    'apiEndpoint' => '/api/measurements.php',
+    'pagePath' => '/user/measurements.php',
 ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?></script>
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
 

@@ -6,24 +6,149 @@ require_once __DIR__ . '/../services/users.php';
 require_once __DIR__ . '/../services/stations.php';
 require_once __DIR__ . '/../services/admin_posts.php';
 require_once __DIR__ . '/../services/notifications.php';
+require_once __DIR__ . '/../services/collections.php';
+require_once __DIR__ . '/../services/measurements.php';
 requireAdmin();
 
 $username = $_SESSION['username'];
 $msg = '';
 $err = '';
 
-$activeTab = $_GET['tab'] ?? 'overview';
+$activeTab = $_GET['tab'] ?? 'users';
+$allowedTabs = ['users', 'stations', 'measurements', 'collections', 'posts'];
+if (!in_array($activeTab, $allowedTabs, true)) {
+    $activeTab = 'users';
+}
+
 $perPage = 15;
 $postTitleMaxLen = 120;
 $titleLen = function (string $text): int {
     return function_exists('mb_strlen') ? mb_strlen($text) : strlen($text);
 };
 
-// Handle POST actions
+function normalizeAdminMeasurementDateTimeInput(string $value, bool $isEnd): string {
+    $value = trim($value);
+    if ($value === '') {
+        return '';
+    }
+
+    $formats = ['d.m.Y H:i', 'Y-m-d H:i:s', 'Y-m-d H:i', 'Y-m-d\TH:i'];
+    foreach ($formats as $format) {
+        $dt = DateTime::createFromFormat($format, $value);
+        if ($dt instanceof DateTime) {
+            return $dt->format('Y-m-d H:i:s');
+        }
+    }
+
+    $dateOnlyFormats = ['d.m.Y', 'Y-m-d'];
+    foreach ($dateOnlyFormats as $format) {
+        $dt = DateTime::createFromFormat($format, $value);
+        if ($dt instanceof DateTime) {
+            if ($isEnd) {
+                $dt->setTime(23, 59, 59);
+            } else {
+                $dt->setTime(0, 0, 0);
+            }
+            return $dt->format('Y-m-d H:i:s');
+        }
+    }
+
+    try {
+        $dt = new DateTime($value);
+        return $dt->format('Y-m-d H:i:s');
+    } catch (Throwable $e) {
+        return '';
+    }
+}
+
+function getAllCollectionsForAdmin(mysqli $conn): array {
+    $sql = "SELECT c.pk_collectionID, c.name, c.description, c.fk_user, c.createdAt,
+                   u.firstName AS ownerFirstName, u.lastName AS ownerLastName, u.avatar AS ownerAvatar
+            FROM collection c
+            LEFT JOIN user u ON u.pk_username = c.fk_user
+            ORDER BY c.createdAt DESC";
+    return $conn->query($sql)->fetch_all(MYSQLI_ASSOC);
+}
+
+function buildAdminProfileUrl(string $user): string {
+    $back = (string)($_SERVER['REQUEST_URI'] ?? '/admin/panel.php?tab=collections');
+    $parts = parse_url($back);
+    if ($parts !== false) {
+        $path = (string)($parts['path'] ?? '/admin/panel.php');
+        $query = [];
+        if (!empty($parts['query'])) {
+            parse_str((string)$parts['query'], $query);
+        }
+        unset($query['ajax_tab']);
+        $back = $path . (!empty($query) ? ('?' . http_build_query($query)) : '');
+    } else {
+        $back = '/admin/panel.php?tab=collections';
+    }
+
+    return '/user/view_profile.php?user=' . urlencode($user) . '&back=' . urlencode($back);
+}
+
+function getAllStationsForAdminFilters(mysqli $conn): array {
+    $sql = "SELECT DISTINCT m.fk_station AS pk_serialNumber,
+                   COALESCE(
+                       NULLIF((SELECT h1.name
+                               FROM ownership_history h1
+                               WHERE h1.fk_serialNumber = m.fk_station
+                               ORDER BY (h1.unregisteredAt IS NULL) DESC, h1.registeredAt DESC, h1.pk_id DESC
+                               LIMIT 1), ''),
+                       m.fk_station
+                   ) AS name
+            FROM measurement m
+            ORDER BY name ASC";
+    return $conn->query($sql)->fetch_all(MYSQLI_ASSOC);
+}
+
+function getAllSlotsForAdminCollections(mysqli $conn): array {
+    $sql = "SELECT s.pk_sampleID, s.fk_collection, s.fk_station, s.startDateTime, s.endDateTime,
+                   COALESCE(
+                       NULLIF((SELECT h1.name
+                               FROM ownership_history h1
+                               WHERE h1.fk_serialNumber = s.fk_station
+                               ORDER BY (h1.unregisteredAt IS NULL) DESC, h1.registeredAt DESC, h1.pk_id DESC
+                               LIMIT 1), ''),
+                       s.fk_station
+                   ) AS station_name
+            FROM slot s
+            ORDER BY s.startDateTime DESC";
+    return $conn->query($sql)->fetch_all(MYSQLI_ASSOC);
+}
+
+function buildAdminMeasurementsUrl(array $params = []): string {
+    $base = [
+        'tab' => 'measurements',
+        'admin_all' => '1',
+    ];
+    foreach ($params as $key => $value) {
+        if ($value === null || $value === '') {
+            continue;
+        }
+        $base[$key] = $value;
+    }
+    return '/admin/panel.php?' . http_build_query($base);
+}
+
+function sameUserSet(array $a, array $b): bool {
+    sort($a);
+    sort($b);
+    return $a === $b;
+}
+
+function detectPostAudience(array $recipients, array $allUsernames, array $regularUsernames, array $adminUsernames): string {
+    $recipients = array_values(array_unique($recipients));
+    if (sameUserSet($recipients, $allUsernames)) return 'all';
+    if (sameUserSet($recipients, $regularUsernames)) return 'users';
+    if (sameUserSet($recipients, $adminUsernames)) return 'admins';
+    return 'selected';
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
-    // Users
     if ($action === 'create_user') {
         $un = trim($_POST['username'] ?? '');
         $fn = trim($_POST['firstName'] ?? '');
@@ -61,9 +186,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $err = 'Cannot delete yourself';
         }
-    }
-    // Stations
-    elseif ($action === 'create_station') {
+    } elseif ($action === 'create_station') {
         $serial = trim($_POST['serial'] ?? '');
         if ($serial) {
             if (adminCreateStation($conn, $serial, $username)) {
@@ -85,9 +208,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (adminDeleteStation($conn, $serial)) {
             $msg = t('success');
         }
-    }
-    // Posts
-    elseif ($action === 'create_post') {
+    } elseif ($action === 'create_post') {
         $title = trim($_POST['title'] ?? '');
         $content = trim($_POST['content'] ?? '');
         $audience = trim($_POST['audience'] ?? 'all');
@@ -99,18 +220,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($titleLen($title) > $postTitleMaxLen) {
                 $err = t('post_title_too_long') . ' (' . $postTitleMaxLen . ')';
             } else {
-            $recipients = getPostAudienceRecipients($conn, $audience, $selectedRecipients);
-            if ($audience === 'selected' && empty($recipients)) {
-                $err = t('select_at_least_one_recipient');
-            } else {
-            $postId = createPost($conn, $username, $title, $content);
-            if ($postId) {
-                foreach ($recipients as $recipientUsername) {
-                    createNotification($conn, $recipientUsername, 'admin_post', $title, strip_tags($content), '/user/dashboard.php?post_id=' . $postId);
+                $recipients = getPostAudienceRecipients($conn, $audience, $selectedRecipients);
+                if ($audience === 'selected' && empty($recipients)) {
+                    $err = t('select_at_least_one_recipient');
+                } else {
+                    $postId = createPost($conn, $username, $title, $content);
+                    if ($postId) {
+                        foreach ($recipients as $recipientUsername) {
+                            createNotification($conn, $recipientUsername, 'admin_post', $title, strip_tags($content), '/user/dashboard.php?post_id=' . $postId);
+                        }
+                        $msg = t('success');
+                    }
                 }
-                $msg = t('success');
-            }
-            }
             }
         }
     } elseif ($action === 'update_post') {
@@ -139,21 +260,389 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             deleteAdminPostNotifications($conn, $id, $existingPost['title'] ?? null);
             $msg = t('success');
         }
+    } elseif ($action === 'create_collection_admin') {
+        $owner = trim($_POST['owner'] ?? '');
+        $name = trim($_POST['name'] ?? '');
+        $description = trim($_POST['description'] ?? '');
+        if ($owner !== '' && $name !== '' && getUserByUsername($conn, $owner)) {
+            $existsStmt = $conn->prepare("SELECT 1 FROM collection WHERE fk_user = ? AND name = ? LIMIT 1");
+            $existsStmt->bind_param('ss', $owner, $name);
+            $existsStmt->execute();
+            $alreadyExists = (bool)$existsStmt->get_result()->fetch_row();
+            if ($alreadyExists) {
+                $err = t('collection_name_exists');
+            } else {
+                try {
+                    if (createCollection($conn, $owner, $name, $description)) {
+                        $msg = t('success');
+                    } else {
+                        $err = t('error_occurred');
+                    }
+                } catch (mysqli_sql_exception $e) {
+                    $err = ((int)$e->getCode() === 1062) ? t('collection_name_exists') : t('error_occurred');
+                }
+            }
+        } else {
+            $err = t('error_occurred');
+        }
+    } elseif ($action === 'update_collection_admin') {
+        $collectionId = (int)($_POST['collection_id'] ?? 0);
+        $owner = trim($_POST['owner'] ?? '');
+        $name = trim($_POST['name'] ?? '');
+        $description = trim($_POST['description'] ?? '');
+        if ($collectionId > 0 && $owner !== '' && $name !== '' && getUserByUsername($conn, $owner)) {
+            $stmt = $conn->prepare("UPDATE collection SET name = ?, description = ?, fk_user = ? WHERE pk_collectionID = ?");
+            $stmt->bind_param('sssi', $name, $description, $owner, $collectionId);
+            try {
+                if ($stmt->execute()) {
+                    $msg = t('success');
+                } else {
+                    $err = ((int)$conn->errno === 1062) ? t('collection_name_exists') : t('error_occurred');
+                }
+            } catch (mysqli_sql_exception $e) {
+                $err = ((int)$e->getCode() === 1062) ? t('collection_name_exists') : t('error_occurred');
+            }
+        } else {
+            $err = t('error_occurred');
+        }
+    } elseif ($action === 'delete_collection_admin') {
+        $collectionId = (int)($_POST['collection_id'] ?? 0);
+        if ($collectionId > 0 && deleteCollection($conn, $collectionId)) {
+            $msg = t('success');
+        } else {
+            $err = t('error_occurred');
+        }
+    } elseif ($action === 'add_collection_slot_admin') {
+        $collectionId = (int)($_POST['collection_id'] ?? 0);
+        $station = trim($_POST['station'] ?? '');
+        $start = convertToMySQLDateTime((string)($_POST['start'] ?? ''));
+        $end = convertToMySQLDateTime((string)($_POST['end'] ?? ''));
+        if ($collectionId > 0 && $station !== '' && $start && $end && isValidSlotRange($start, $end) && !hasOverlappingSlot($conn, $collectionId, $station, $start, $end)) {
+            if (addSample($conn, $collectionId, $station, $start, $end)) {
+                $msg = t('success');
+            } else {
+                $err = t('error_occurred');
+            }
+        } else {
+            if (!$start || !$end || !isValidSlotRange((string)$start, (string)$end)) {
+                $err = t('slot_invalid_range');
+            } elseif ($collectionId > 0 && $station !== '' && $start && $end && hasOverlappingSlot($conn, $collectionId, $station, $start, $end)) {
+                $err = t('slot_overlap');
+            } else {
+                $err = t('error_occurred');
+            }
+        }
+    } elseif ($action === 'remove_collection_slot_admin') {
+        $sampleId = (int)($_POST['sample_id'] ?? 0);
+        if ($sampleId > 0 && removeSample($conn, $sampleId)) {
+            $msg = t('success');
+        } else {
+            $err = t('error_occurred');
+        }
+    } elseif ($action === 'share_collection_admin') {
+        $collectionId = (int)($_POST['collection_id'] ?? 0);
+        $shareWith = trim($_POST['share_with'] ?? '');
+        $collection = getCollectionById($conn, $collectionId);
+        if (!$collection || (string)($collection['fk_user'] ?? '') !== $username) {
+            $err = t('not_authorized');
+        } elseif ($shareWith === '' || $shareWith === $username || !getUserByUsername($conn, $shareWith)) {
+            $err = t('error_occurred');
+        } elseif (shareCollection($conn, $collectionId, $shareWith)) {
+            $msg = t('success');
+        } else {
+            $err = t('error_occurred');
+        }
+    } elseif ($action === 'unshare_collection_admin') {
+        $collectionId = (int)($_POST['collection_id'] ?? 0);
+        $unshareUser = trim($_POST['unshare_user'] ?? '');
+        $collection = getCollectionById($conn, $collectionId);
+        if (!$collection || (string)($collection['fk_user'] ?? '') !== $username) {
+            $err = t('not_authorized');
+        } elseif ($unshareUser === '') {
+            $err = t('error_occurred');
+        } elseif (unshareCollection($conn, $collectionId, $unshareUser)) {
+            $msg = t('success');
+        } else {
+            $err = t('error_occurred');
+        }
     }
 }
 
-// Data
 $userPage = (int)($_GET['user_page'] ?? 1);
 $stationPage = (int)($_GET['station_page'] ?? 1);
 $postPage = (int)($_GET['post_page'] ?? 1);
 
-require_once __DIR__ . '/../includes/header.php';
+$adminMeasurementFilters = [
+    'station' => $_GET['station'] ?? '',
+    'collection' => $_GET['collection'] ?? '',
+    'date_from' => $_GET['date_from'] ?? '',
+    'date_to' => $_GET['date_to'] ?? '',
+    'owner_id' => '',
+];
+$adminMeasurementFilters['date_from'] = normalizeAdminMeasurementDateTimeInput((string)$adminMeasurementFilters['date_from'], false);
+$adminMeasurementFilters['date_to'] = normalizeAdminMeasurementDateTimeInput((string)$adminMeasurementFilters['date_to'], true);
+
+$allStationsForFilters = getAllStationsForAdminFilters($conn);
+$allStationSerials = array_column($allStationsForFilters, 'pk_serialNumber');
+if ($adminMeasurementFilters['station'] !== '' && !in_array($adminMeasurementFilters['station'], $allStationSerials, true)) {
+    $adminMeasurementFilters['station'] = '';
+}
+
+$allCollectionsForAdmin = getAllCollectionsForAdmin($conn);
+$allCollectionIds = array_map(static fn($r) => (int)($r['pk_collectionID'] ?? 0), $allCollectionsForAdmin);
+if ($adminMeasurementFilters['collection'] !== '') {
+    $adminMeasurementFilters['collection'] = (int)$adminMeasurementFilters['collection'];
+    if ($adminMeasurementFilters['collection'] <= 0 || !in_array($adminMeasurementFilters['collection'], $allCollectionIds, true)) {
+        $adminMeasurementFilters['collection'] = '';
+    }
+}
+
+$allSlotsForAdmin = getAllSlotsForAdminCollections($conn);
+$slotsByCollection = [];
+foreach ($allSlotsForAdmin as $slotRow) {
+    $collectionId = (int)($slotRow['fk_collection'] ?? 0);
+    if ($collectionId <= 0) {
+        continue;
+    }
+    if (!isset($slotsByCollection[$collectionId])) {
+        $slotsByCollection[$collectionId] = [];
+    }
+    $slotRow['measurements_url'] = buildAdminMeasurementsUrl([
+        'collection' => $collectionId,
+        'station' => (string)($slotRow['fk_station'] ?? ''),
+        'date_from' => (string)($slotRow['startDateTime'] ?? ''),
+        'date_to' => (string)($slotRow['endDateTime'] ?? ''),
+    ]);
+    $slotsByCollection[$collectionId][] = $slotRow;
+}
+
+$collectionSharesByCollection = [];
+$collectionSharesViewByCollection = [];
+foreach ($allCollectionsForAdmin as $collectionRow) {
+    $collectionId = (int)($collectionRow['pk_collectionID'] ?? 0);
+    if ($collectionId <= 0) {
+        continue;
+    }
+    $shares = getCollectionShares($conn, $collectionId);
+    $collectionSharesByCollection[$collectionId] = $shares;
+    $collectionSharesViewByCollection[$collectionId] = array_map(static function (array $share): array {
+        $shareUser = (string)($share['pk_username'] ?? '');
+        return [
+            'username' => $shareUser,
+            'firstName' => (string)($share['firstName'] ?? ''),
+            'lastName' => (string)($share['lastName'] ?? ''),
+            'avatarUrl' => (string)(getAvatarUrl((string)($share['avatar'] ?? ''), $shareUser) ?? ''),
+            'profileUrl' => buildAdminProfileUrl($shareUser),
+        ];
+    }, $shares);
+}
+
+$collectionsIdFilter = (int)($_GET['collections_id'] ?? 0);
+if ($collectionsIdFilter < 0) {
+    $collectionsIdFilter = 0;
+}
+$collectionsNameFilterInput = $_GET['collections_name'] ?? [];
+if (!is_array($collectionsNameFilterInput)) {
+    $collectionsNameFilterInput = [
+        trim((string)$collectionsNameFilterInput),
+    ];
+}
+$collectionNamesLookup = [];
+foreach ($allCollectionsForAdmin as $collectionRow) {
+    $collectionName = trim((string)($collectionRow['name'] ?? ''));
+    if ($collectionName !== '') {
+        $collectionNamesLookup[$collectionName] = true;
+    }
+}
+$collectionNameFilterOptions = array_keys($collectionNamesLookup);
+sort($collectionNameFilterOptions, SORT_NATURAL | SORT_FLAG_CASE);
+$collectionsNameFilter = array_values(array_filter(array_map('trim', array_map('strval', $collectionsNameFilterInput)), static function (string $name) use ($collectionNamesLookup): bool {
+    return $name !== '' && isset($collectionNamesLookup[$name]);
+}));
+
+$allUsersForCollectionOwner = $conn->query("SELECT pk_username, firstName, lastName, avatar FROM user ORDER BY firstName ASC, lastName ASC, pk_username ASC")->fetch_all(MYSQLI_ASSOC);
+$collectionOwnerUsernames = array_column($allUsersForCollectionOwner, 'pk_username');
+
+$collectionsOwnerFilterInput = $_GET['collections_owner'] ?? [];
+if (!is_array($collectionsOwnerFilterInput)) {
+    $collectionsOwnerFilterInput = [$collectionsOwnerFilterInput];
+}
+$collectionsOwnerFilter = array_values(array_filter(array_map('trim', array_map('strval', $collectionsOwnerFilterInput)), static function (string $u) use ($collectionOwnerUsernames): bool {
+    return $u !== '' && in_array($u, $collectionOwnerUsernames, true);
+}));
+
+$collectionsSharedUsersInput = $_GET['collections_shared_users'] ?? [];
+if (!is_array($collectionsSharedUsersInput)) {
+    $collectionsSharedUsersInput = [$collectionsSharedUsersInput];
+}
+$collectionsSharedUsersFilter = array_values(array_filter(array_map('trim', array_map('strval', $collectionsSharedUsersInput)), static function (string $u) use ($collectionOwnerUsernames): bool {
+    return $u !== '' && in_array($u, $collectionOwnerUsernames, true);
+}));
+
+$collectionsCreatedFromInput = trim((string)($_GET['collections_created_from'] ?? ''));
+$collectionsCreatedToInput = trim((string)($_GET['collections_created_to'] ?? ''));
+$collectionsCreatedFrom = normalizeAdminMeasurementDateTimeInput($collectionsCreatedFromInput, false);
+$collectionsCreatedTo = normalizeAdminMeasurementDateTimeInput($collectionsCreatedToInput, true);
+
+$collectionsPerPage = (int)($_GET['collections_per_page'] ?? 20);
+if (!in_array($collectionsPerPage, [10, 20, 50, 100], true)) {
+    $collectionsPerPage = 20;
+}
+$collectionsPage = max(1, (int)($_GET['collections_page'] ?? 1));
+
+$collectionsFilterBaseQuery = [
+    'tab' => 'collections',
+    'collections_id' => $collectionsIdFilter > 0 ? $collectionsIdFilter : '',
+    'collections_created_from' => $collectionsCreatedFromInput,
+    'collections_created_to' => $collectionsCreatedToInput,
+    'collections_per_page' => $collectionsPerPage,
+];
+foreach ($collectionsNameFilter as $nameValue) {
+    $collectionsFilterBaseQuery['collections_name[]'][] = $nameValue;
+}
+foreach ($collectionsOwnerFilter as $ownerUsername) {
+    $collectionsFilterBaseQuery['collections_owner[]'][] = $ownerUsername;
+}
+foreach ($collectionsSharedUsersFilter as $sharedUsername) {
+    $collectionsFilterBaseQuery['collections_shared_users[]'][] = $sharedUsername;
+}
+
+$filteredCollectionsForAdmin = array_values(array_filter($allCollectionsForAdmin, static function (array $row) use ($collectionsIdFilter, $collectionsNameFilter, $collectionsOwnerFilter, $collectionsSharedUsersFilter, $collectionsCreatedFrom, $collectionsCreatedTo, $collectionSharesByCollection): bool {
+    if ($collectionsIdFilter > 0 && (int)($row['pk_collectionID'] ?? 0) !== $collectionsIdFilter) {
+        return false;
+    }
+
+    if (!empty($collectionsNameFilter)) {
+        $name = (string)($row['name'] ?? '');
+        if (!in_array($name, $collectionsNameFilter, true)) {
+            return false;
+        }
+    }
+
+    if (!empty($collectionsOwnerFilter)) {
+        $ownerUsername = (string)($row['fk_user'] ?? '');
+        if (!in_array($ownerUsername, $collectionsOwnerFilter, true)) {
+            return false;
+        }
+    }
+
+    if (!empty($collectionsSharedUsersFilter)) {
+        $collectionId = (int)($row['pk_collectionID'] ?? 0);
+        $shares = $collectionSharesByCollection[$collectionId] ?? [];
+        $shareUsernames = array_map(static fn(array $s): string => (string)($s['pk_username'] ?? ''), $shares);
+        if (empty(array_intersect($shareUsernames, $collectionsSharedUsersFilter))) {
+            return false;
+        }
+    }
+
+    $createdAt = (string)($row['createdAt'] ?? '');
+    if ($createdAt !== '') {
+        $createdTs = strtotime($createdAt);
+        if ($collectionsCreatedFrom !== '' && $createdTs !== false && $createdTs < strtotime($collectionsCreatedFrom)) {
+            return false;
+        }
+        if ($collectionsCreatedTo !== '' && $createdTs !== false && $createdTs > strtotime($collectionsCreatedTo)) {
+            return false;
+        }
+    }
+
+    return true;
+}));
+
+$filteredCollectionsTotal = count($filteredCollectionsForAdmin);
+$filteredCollectionsPages = max(1, (int)ceil($filteredCollectionsTotal / $collectionsPerPage));
+$collectionsPage = min($collectionsPage, $filteredCollectionsPages);
+$collectionsOffset = ($collectionsPage - 1) * $collectionsPerPage;
+$collectionsPageItems = array_slice($filteredCollectionsForAdmin, $collectionsOffset, $collectionsPerPage);
+
+$adminMeasPage = max(1, (int)($_GET['page'] ?? 1));
+$adminMeasPerPage = (int)($_GET['per_page'] ?? 20);
+if (!in_array($adminMeasPerPage, [10, 20, 50, 100], true)) {
+    $adminMeasPerPage = 20;
+}
+
+if ($activeTab === 'measurements' && isset($_GET['export']) && $_GET['export'] === 'csv') {
+    $csv = exportCsv($conn, $adminMeasurementFilters);
+    header('Content-Type: text/csv');
+    header('Content-Disposition: attachment; filename="admin_measurements.csv"');
+    echo $csv;
+    exit;
+}
+
+$adminMeasurementTotal = countMeasurements($conn, $adminMeasurementFilters);
+$adminMeasurementTotalPages = max(1, (int)ceil($adminMeasurementTotal / $adminMeasPerPage));
+$adminMeasPage = min($adminMeasPage, $adminMeasurementTotalPages);
+$adminMeasurements = getMeasurements($conn, $adminMeasurementFilters, $adminMeasPage, $adminMeasPerPage);
+
+$adminCollectionOptions = [];
+foreach ($allCollectionsForAdmin as $collection) {
+    $collectionId = (string)($collection['pk_collectionID'] ?? '');
+    if ($collectionId === '') {
+        continue;
+    }
+    $collectionName = trim((string)($collection['name'] ?? ''));
+    if ($collectionName === '') {
+        $collectionName = $collectionId;
+    }
+    $adminCollectionOptions[] = ['value' => $collectionId, 'label' => $collectionName];
+}
+
+$adminStationOptions = [];
+foreach ($allStationsForFilters as $station) {
+    $stationSerial = (string)($station['pk_serialNumber'] ?? '');
+    if ($stationSerial === '') {
+        continue;
+    }
+    $stationName = trim((string)($station['name'] ?? ''));
+    if ($stationName === '') {
+        $stationName = $stationSerial;
+    }
+    $adminStationOptions[] = ['value' => $stationSerial, 'label' => $stationName];
+}
+
+$adminCollectionStationsMap = [];
+foreach ($allCollectionsForAdmin as $collection) {
+    $collectionId = (int)($collection['pk_collectionID'] ?? 0);
+    if ($collectionId <= 0) {
+        continue;
+    }
+    $stations = [];
+    $sql = "SELECT DISTINCT m.fk_station AS station_serial
+            FROM contains ct
+            JOIN measurement m ON m.pk_measurementID = ct.pkfk_measurement
+            WHERE ct.pkfk_collection = ?";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param('i', $collectionId);
+    $stmt->execute();
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    foreach ($rows as $r) {
+        $serial = (string)($r['station_serial'] ?? '');
+        if ($serial !== '') {
+            $stations[$serial] = true;
+        }
+    }
+    $list = array_keys($stations);
+    sort($list, SORT_NATURAL | SORT_FLAG_CASE);
+    $adminCollectionStationsMap[(string)$collectionId] = $list;
+}
+
+$adminMeasurementFrom = ($adminMeasPage - 1) * $adminMeasPerPage + 1;
+$adminMeasurementTo = min($adminMeasPage * $adminMeasPerPage, $adminMeasurementTotal);
+$adminMeasurementPaginationInfo = str_replace(['{from}', '{to}', '{total}'], [$adminMeasurementTotal > 0 ? $adminMeasurementFrom : 0, $adminMeasurementTo, $adminMeasurementTotal], t('pagination_info'));
+
+$allUsersForCollectionOwnerView = array_map(static function (array $u): array {
+    $uname = (string)($u['pk_username'] ?? '');
+    return [
+        'pk_username' => $uname,
+        'firstName' => (string)($u['firstName'] ?? ''),
+        'lastName' => (string)($u['lastName'] ?? ''),
+        'avatarUrl' => (string)(getAvatarUrl((string)($u['avatar'] ?? ''), $uname) ?? ''),
+        'profileUrl' => buildAdminProfileUrl($uname),
+    ];
+}, $allUsersForCollectionOwner);
 
 $totalUsers = adminCountUsers($conn);
 $totalStations = adminCountStations($conn);
-$totalMeas = (int)$conn->query("SELECT COUNT(*) AS c FROM measurement")->fetch_assoc()['c'];
-$totalColls = (int)$conn->query("SELECT COUNT(*) AS c FROM collection")->fetch_assoc()['c'];
-
 $users = adminGetUsersPage($conn, $userPage, $perPage);
 $stations = adminGetStationsPage($conn, $stationPage, $perPage);
 $posts = getPosts($conn, $postPage, $perPage);
@@ -167,430 +656,55 @@ $regularUsernames = array_column(array_values(array_filter($postTargetUsers, fun
     return ($u['role'] ?? '') === 'User';
 })), 'pk_username');
 
-function sameUserSet(array $a, array $b): bool {
-    sort($a);
-    sort($b);
-    return $a === $b;
+ob_start();
+switch ($activeTab) {
+    case 'users':
+        require __DIR__ . '/tabs/users.php';
+        break;
+    case 'stations':
+        require __DIR__ . '/tabs/stations.php';
+        break;
+    case 'measurements':
+        require __DIR__ . '/tabs/measurements.php';
+        break;
+    case 'collections':
+        require __DIR__ . '/tabs/collections.php';
+        break;
+    case 'posts':
+        require __DIR__ . '/tabs/posts.php';
+        break;
+}
+$tabHtml = ob_get_clean();
+
+$isAjaxTabRequest = (string)($_GET['ajax_tab'] ?? $_POST['ajax_tab'] ?? '') === '1';
+if ($isAjaxTabRequest) {
+    header('Content-Type: application/json; charset=UTF-8');
+    echo json_encode([
+        'success' => true,
+        'activeTab' => $activeTab,
+        'tabHtml' => $tabHtml,
+        'alertsHtml' => $err ? showError($err) : '',
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    exit;
 }
 
-function detectPostAudience(array $recipients, array $allUsernames, array $regularUsernames, array $adminUsernames): string {
-    $recipients = array_values(array_unique($recipients));
-    if (sameUserSet($recipients, $allUsernames)) return 'all';
-    if (sameUserSet($recipients, $regularUsernames)) return 'users';
-    if (sameUserSet($recipients, $adminUsernames)) return 'admins';
-    return 'selected';
-}
+require_once __DIR__ . '/../includes/header.php';
 ?>
 <h2 class="mb-4"><i class="bi bi-shield-lock me-2"></i><?= t('admin_panel') ?></h2>
 
-<?php if ($msg): ?><?= showSuccess($msg) ?><?php endif; ?>
+<div class="admin-panel-alerts">
 <?php if ($err): ?><?= showError($err) ?><?php endif; ?>
+</div>
 
-<!-- Tab nav -->
-<ul class="nav nav-tabs mb-4">
-    <li class="nav-item"><a class="nav-link <?= $activeTab === 'overview' ? 'active' : '' ?>" href="?tab=overview"><?= t('dashboard') ?></a></li>
+<ul class="nav nav-tabs mb-4" id="adminTabsNav">
     <li class="nav-item"><a class="nav-link <?= $activeTab === 'users' ? 'active' : '' ?>" href="?tab=users"><?= t('users') ?></a></li>
     <li class="nav-item"><a class="nav-link <?= $activeTab === 'stations' ? 'active' : '' ?>" href="?tab=stations"><?= t('stations') ?></a></li>
+    <li class="nav-item"><a class="nav-link <?= $activeTab === 'measurements' ? 'active' : '' ?>" href="?tab=measurements"><?= t('measurements') ?></a></li>
+    <li class="nav-item"><a class="nav-link <?= $activeTab === 'collections' ? 'active' : '' ?>" href="?tab=collections"><?= t('collections') ?></a></li>
     <li class="nav-item"><a class="nav-link <?= $activeTab === 'posts' ? 'active' : '' ?>" href="?tab=posts"><?= t('admin_posts') ?></a></li>
 </ul>
 
-<?php if ($activeTab === 'overview'): ?>
-<!-- Overview stats -->
-<div class="row g-3">
-    <div class="col-md-3 col-6">
-        <div class="card stat-card text-center p-3">
-            <div class="stat-value text-primary"><?= $totalUsers ?></div>
-            <div class="stat-label"><?= t('total_users') ?></div>
-        </div>
-    </div>
-    <div class="col-md-3 col-6">
-        <div class="card stat-card text-center p-3">
-            <div class="stat-value text-success"><?= $totalStations ?></div>
-            <div class="stat-label"><?= t('total_stations') ?></div>
-        </div>
-    </div>
-    <div class="col-md-3 col-6">
-        <div class="card stat-card text-center p-3">
-            <div class="stat-value text-info"><?= $totalMeas ?></div>
-            <div class="stat-label"><?= t('total_measurements') ?></div>
-        </div>
-    </div>
-    <div class="col-md-3 col-6">
-        <div class="card stat-card text-center p-3">
-            <div class="stat-value text-warning"><?= $totalColls ?></div>
-            <div class="stat-label"><?= t('total_collections') ?></div>
-        </div>
-    </div>
-</div>
-
-<?php elseif ($activeTab === 'users'): ?>
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h5 class="mb-0"><?= t('users') ?> (<?= $totalUsers ?>)</h5>
-    <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#createUserModal">
-        <i class="bi bi-plus-circle me-1"></i><?= t('create') ?>
-    </button>
-</div>
-<div class="table-responsive">
-    <table class="table table-hover align-middle">
-        <thead>
-            <tr><th><?= t('username') ?></th><th><?= t('first_name') ?></th><th><?= t('last_name') ?></th><th><?= t('email') ?></th><th><?= t('role') ?></th><th><?= t('created_at') ?></th><th><?= t('actions') ?></th></tr>
-        </thead>
-        <tbody>
-        <?php foreach ($users as $u): ?>
-        <tr>
-            <td><?= e($u['pk_username']) ?></td>
-            <td><?= e($u['firstName']) ?></td>
-            <td><?= e($u['lastName']) ?></td>
-            <td><?= e($u['email']) ?></td>
-            <td><span class="badge bg-<?= $u['role'] === 'Admin' ? 'danger' : 'secondary' ?>"><?= e($u['role']) ?></span></td>
-            <td><?= formatDateTime($u['createdAt'] ?? null) ?></td>
-            <td>
-                <button class="btn btn-sm btn-outline-primary" onclick="editUser(<?= htmlspecialchars(json_encode($u), ENT_QUOTES) ?>)">
-                    <i class="bi bi-pencil"></i>
-                </button>
-                <?php if ($u['pk_username'] !== $username): ?>
-                <form method="post" class="d-inline">
-                    <input type="hidden" name="action" value="delete_user">
-                    <input type="hidden" name="username" value="<?= e($u['pk_username']) ?>">
-                    <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('<?= t('confirm_delete') ?>')"><i class="bi bi-trash"></i></button>
-                </form>
-                <?php endif; ?>
-            </td>
-        </tr>
-        <?php endforeach; ?>
-        </tbody>
-    </table>
-</div>
-<?php $totalUserPages = max(1, ceil($totalUsers / $perPage)); ?>
-<?php if ($totalUserPages > 1): ?>
-<nav><ul class="pagination pagination-sm justify-content-center">
-    <?php for ($i = 1; $i <= $totalUserPages; $i++): ?>
-    <li class="page-item <?= $i == $userPage ? 'active' : '' ?>"><a class="page-link" href="?tab=users&user_page=<?= $i ?>"><?= $i ?></a></li>
-    <?php endfor; ?>
-</ul></nav>
-<?php endif; ?>
-
-<!-- Create User Modal -->
-<div class="modal fade" id="createUserModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header"><h5 class="modal-title"><?= t('create') ?> <?= t('users') ?></h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-            <form method="post">
-                <input type="hidden" name="action" value="create_user">
-                <div class="modal-body">
-                    <div class="row">
-                        <div class="col-6 mb-3"><label class="form-label"><?= t('username') ?></label><input type="text" name="username" class="form-control" required></div>
-                        <div class="col-6 mb-3"><label class="form-label"><?= t('role') ?></label><select name="role" class="form-select"><option>User</option><option>Admin</option></select></div>
-                    </div>
-                    <div class="row">
-                        <div class="col-6 mb-3"><label class="form-label"><?= t('first_name') ?></label><input type="text" name="firstName" class="form-control" required></div>
-                        <div class="col-6 mb-3"><label class="form-label"><?= t('last_name') ?></label><input type="text" name="lastName" class="form-control" required></div>
-                    </div>
-                    <div class="mb-3"><label class="form-label"><?= t('email') ?></label><input type="email" name="email" class="form-control" required></div>
-                    <div class="mb-3"><label class="form-label"><?= t('password') ?></label><input type="password" name="password" class="form-control" required></div>
-                </div>
-                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><?= t('cancel') ?></button><button type="submit" class="btn btn-primary"><?= t('create') ?></button></div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- Edit User Modal -->
-<div class="modal fade" id="editUserModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header"><h5 class="modal-title"><?= t('edit') ?> <?= t('users') ?></h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-            <form method="post">
-                <input type="hidden" name="action" value="update_user">
-                <input type="hidden" name="username" id="editUserUsername">
-                <div class="modal-body">
-                    <div class="row">
-                        <div class="col-6 mb-3"><label class="form-label"><?= t('first_name') ?></label><input type="text" name="firstName" id="editUserFn" class="form-control" required></div>
-                        <div class="col-6 mb-3"><label class="form-label"><?= t('last_name') ?></label><input type="text" name="lastName" id="editUserLn" class="form-control" required></div>
-                    </div>
-                    <div class="mb-3"><label class="form-label"><?= t('email') ?></label><input type="email" name="email" id="editUserEmail" class="form-control" required></div>
-                    <div class="mb-3"><label class="form-label"><?= t('role') ?></label><select name="role" id="editUserRole" class="form-select"><option>User</option><option>Admin</option></select></div>
-                    <div class="mb-3"><label class="form-label"><?= t('new_password') ?> (leave blank to keep)</label><input type="password" name="new_password" class="form-control"></div>
-                </div>
-                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><?= t('cancel') ?></button><button type="submit" class="btn btn-primary"><?= t('save') ?></button></div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<?php elseif ($activeTab === 'stations'): ?>
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h5 class="mb-0"><?= t('stations') ?> (<?= $totalStations ?>)</h5>
-    <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#createStationModal">
-        <i class="bi bi-plus-circle me-1"></i><?= t('create') ?>
-    </button>
-</div>
-<div class="table-responsive">
-    <table class="table table-hover align-middle">
-        <thead><tr><th><?= t('station_serial') ?></th><th><?= t('name') ?></th><th><?= t('description') ?></th><th><?= t('registered_by') ?></th><th><?= t('actions') ?></th></tr></thead>
-        <tbody>
-        <?php foreach ($stations as $s): ?>
-        <tr>
-            <td><code><?= e($s['pk_serialNumber']) ?></code></td>
-            <td><?= e($s['name'] ?? '') ?></td>
-            <td><?= e($s['description'] ?? '') ?></td>
-            <td><?= $s['fk_registeredBy'] ? e($s['firstName'] . ' ' . $s['lastName'] . ' (' . $s['fk_registeredBy'] . ')') : '-' ?></td>
-            <td>
-                <button class="btn btn-sm btn-outline-primary" onclick="editStation(<?= htmlspecialchars(json_encode($s), ENT_QUOTES) ?>)"><i class="bi bi-pencil"></i></button>
-                <form method="post" class="d-inline">
-                    <input type="hidden" name="action" value="delete_station">
-                    <input type="hidden" name="serial" value="<?= e($s['pk_serialNumber']) ?>">
-                    <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('<?= t('confirm_delete') ?>')"><i class="bi bi-trash"></i></button>
-                </form>
-            </td>
-        </tr>
-        <?php endforeach; ?>
-        </tbody>
-    </table>
-</div>
-<?php $totalStationPages = max(1, ceil($totalStations / $perPage)); ?>
-<?php if ($totalStationPages > 1): ?>
-<nav><ul class="pagination pagination-sm justify-content-center">
-    <?php for ($i = 1; $i <= $totalStationPages; $i++): ?>
-    <li class="page-item <?= $i == $stationPage ? 'active' : '' ?>"><a class="page-link" href="?tab=stations&station_page=<?= $i ?>"><?= $i ?></a></li>
-    <?php endfor; ?>
-</ul></nav>
-<?php endif; ?>
-
-<!-- Create Station Modal -->
-<div class="modal fade" id="createStationModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header"><h5 class="modal-title"><?= t('create') ?> <?= t('station') ?></h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-            <form method="post">
-                <input type="hidden" name="action" value="create_station">
-                <div class="modal-body">
-                    <div class="mb-3"><label class="form-label"><?= t('station_serial') ?></label><input type="text" name="serial" class="form-control" required></div>
-                    <div class="form-text"><?= t('name') ?> / <?= t('description') ?> / <?= t('registered_by') ?> <?= t('edit') ?> modal.</div>
-                </div>
-                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><?= t('cancel') ?></button><button type="submit" class="btn btn-primary"><?= t('create') ?></button></div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- Edit Station Modal -->
-<div class="modal fade" id="editStationModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header"><h5 class="modal-title"><?= t('edit') ?> <?= t('station') ?></h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-            <form method="post">
-                <input type="hidden" name="action" value="update_station">
-                <input type="hidden" name="serial" id="editStSerial">
-                <div class="modal-body">
-                    <div class="mb-3"><label class="form-label"><?= t('name') ?></label><input type="text" name="name" id="editStName" class="form-control" required></div>
-                    <div class="mb-3"><label class="form-label"><?= t('description') ?></label><textarea name="description" id="editStDesc" class="form-control" rows="2"></textarea></div>
-                    <div class="mb-3"><label class="form-label"><?= t('registered_by') ?> (username or blank)</label><input type="text" name="registeredBy" id="editStRegBy" class="form-control"></div>
-                </div>
-                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><?= t('cancel') ?></button><button type="submit" class="btn btn-primary"><?= t('save') ?></button></div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<?php elseif ($activeTab === 'posts'): ?>
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h5 class="mb-0"><?= t('admin_posts') ?></h5>
-    <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#createPostModal">
-        <i class="bi bi-plus-circle me-1"></i><?= t('publish') ?>
-    </button>
-</div>
-<?php if (empty($posts)): ?>
-<div class="alert alert-info">No posts yet</div>
-<?php else: ?>
-<?php foreach ($posts as $p): ?>
 <?php
-    $postRecipients = getAdminPostNotificationRecipients($conn, (int)$p['pk_postID']);
-    $editPayload = $p;
-    $editPayload['recipients'] = $postRecipients;
-    $editPayload['audience'] = detectPostAudience($postRecipients, $allUsernames, $regularUsernames, $adminUsernames);
 ?>
-<div class="card mb-3">
-    <div class="card-header d-flex justify-content-between align-items-center">
-        <strong class="post-card-title" title="<?= e($p['title']) ?>"><?= e($p['title']) ?></strong>
-        <div class="d-flex gap-1 align-items-center">
-            <small class="text-muted me-2"><?= formatDateTime($p['createdAt']) ?></small>
-            <button class="btn btn-sm btn-outline-primary" onclick="editPost(<?= htmlspecialchars(json_encode($editPayload), ENT_QUOTES) ?>)"><i class="bi bi-pencil"></i></button>
-            <form method="post" class="d-inline">
-                <input type="hidden" name="action" value="delete_post">
-                <input type="hidden" name="post_id" value="<?= $p['pk_postID'] ?>">
-                <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('<?= t('confirm_delete') ?>')"><i class="bi bi-trash"></i></button>
-            </form>
-        </div>
-    </div>
-    <div class="card-body">
-        <p class="mb-0"><?= nl2br(e($p['content'])) ?></p>
-    </div>
-</div>
-<?php endforeach; ?>
-<?php endif; ?>
-
-<!-- Create Post Modal -->
-<div class="modal fade" id="createPostModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header"><h5 class="modal-title"><?= t('publish') ?></h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-            <form method="post">
-                <input type="hidden" name="action" value="create_post">
-                <div class="modal-body">
-                    <div class="mb-3"><label class="form-label"><?= t('post_title') ?></label><input type="text" name="title" class="form-control" maxlength="<?= $postTitleMaxLen ?>" required></div>
-                    <div class="mb-3"><label class="form-label"><?= t('post_content') ?></label><textarea name="content" class="form-control" rows="6" required></textarea></div>
-                    <div class="mb-3">
-                        <label class="form-label"><?= t('post_visibility') ?></label>
-                        <select name="audience" id="postAudience" class="form-select">
-                            <option value="all"><?= t('post_target_all') ?></option>
-                            <option value="users"><?= t('post_target_users') ?></option>
-                            <option value="admins"><?= t('post_target_admins') ?></option>
-                            <option value="selected"><?= t('post_target_selected') ?></option>
-                        </select>
-                    </div>
-                    <div class="mb-3 d-none" id="postRecipientsWrap">
-                        <label class="form-label"><?= t('select_recipients') ?></label>
-                        <input type="text" id="postRecipientsSearch" class="form-control form-control-sm mb-2" placeholder="<?= t('search_members') ?>">
-                        <div id="postRecipientsList" class="group-member-list mb-1">
-                            <?php foreach ($postTargetUsers as $pu): ?>
-                                <?php $recipientId = 'post_recipient_' . $pu['pk_username']; ?>
-                                <div class="group-member-item form-check">
-                                    <input class="form-check-input post-recipient-check" type="checkbox" name="recipients[]" value="<?= e($pu['pk_username']) ?>" id="<?= e($recipientId) ?>">
-                                    <label class="form-check-label" for="<?= e($recipientId) ?>">
-                                        <?= e($pu['firstName'] . ' ' . $pu['lastName']) ?>
-                                        <small class="text-muted d-block">@<?= e($pu['pk_username']) ?> (<?= e($pu['role']) ?>)</small>
-                                    </label>
-                                </div>
-                            <?php endforeach; ?>
-                            <?php if (empty($postTargetUsers)): ?>
-                                <div class="text-muted small px-3 py-1"><?= t('no_users_found') ?></div>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><?= t('cancel') ?></button><button type="submit" class="btn btn-primary"><?= t('publish') ?></button></div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- Edit Post Modal -->
-<div class="modal fade" id="editPostModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header"><h5 class="modal-title"><?= t('edit') ?></h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-            <form method="post">
-                <input type="hidden" name="action" value="update_post">
-                <input type="hidden" name="post_id" id="editPostId">
-                <div class="modal-body">
-                    <div class="mb-3"><label class="form-label"><?= t('post_title') ?></label><input type="text" name="title" id="editPostTitle" class="form-control" maxlength="<?= $postTitleMaxLen ?>" required></div>
-                    <div class="mb-3"><label class="form-label"><?= t('post_content') ?></label><textarea name="content" id="editPostContent" class="form-control" rows="6" required></textarea></div>
-                    <div class="mb-3">
-                        <label class="form-label"><?= t('post_visibility') ?></label>
-                        <select name="audience" id="editPostAudience" class="form-select">
-                            <option value="all"><?= t('post_target_all') ?></option>
-                            <option value="users"><?= t('post_target_users') ?></option>
-                            <option value="admins"><?= t('post_target_admins') ?></option>
-                            <option value="selected"><?= t('post_target_selected') ?></option>
-                        </select>
-                    </div>
-                    <div class="mb-3 d-none" id="editPostRecipientsWrap">
-                        <label class="form-label"><?= t('select_recipients') ?></label>
-                        <input type="text" id="editPostRecipientsSearch" class="form-control form-control-sm mb-2" placeholder="<?= t('search_members') ?>">
-                        <div id="editPostRecipientsList" class="group-member-list mb-1">
-                            <?php foreach ($postTargetUsers as $pu): ?>
-                                <?php $editRecipientId = 'edit_post_recipient_' . $pu['pk_username']; ?>
-                                <div class="group-member-item form-check">
-                                    <input class="form-check-input edit-post-recipient-check" type="checkbox" name="recipients[]" value="<?= e($pu['pk_username']) ?>" id="<?= e($editRecipientId) ?>">
-                                    <label class="form-check-label" for="<?= e($editRecipientId) ?>">
-                                        <?= e($pu['firstName'] . ' ' . $pu['lastName']) ?>
-                                        <small class="text-muted d-block">@<?= e($pu['pk_username']) ?> (<?= e($pu['role']) ?>)</small>
-                                    </label>
-                                </div>
-                            <?php endforeach; ?>
-                            <?php if (empty($postTargetUsers)): ?>
-                                <div class="text-muted small px-3 py-1"><?= t('no_users_found') ?></div>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><?= t('cancel') ?></button><button type="submit" class="btn btn-primary"><?= t('save') ?></button></div>
-            </form>
-        </div>
-    </div>
-</div>
-<?php endif; ?>
-
-<script>
-function editUser(u) {
-    document.getElementById('editUserUsername').value = u.pk_username;
-    document.getElementById('editUserFn').value = u.firstName;
-    document.getElementById('editUserLn').value = u.lastName;
-    document.getElementById('editUserEmail').value = u.email;
-    document.getElementById('editUserRole').value = u.role;
-    new bootstrap.Modal(document.getElementById('editUserModal')).show();
-}
-function editStation(s) {
-    document.getElementById('editStSerial').value = s.pk_serialNumber;
-    document.getElementById('editStName').value = s.name || '';
-    document.getElementById('editStDesc').value = s.description || '';
-    document.getElementById('editStRegBy').value = s.fk_registeredBy || '';
-    new bootstrap.Modal(document.getElementById('editStationModal')).show();
-}
-function editPost(p) {
-    document.getElementById('editPostId').value = p.pk_postID;
-    document.getElementById('editPostTitle').value = p.title;
-    document.getElementById('editPostContent').value = p.content;
-
-    var editAudience = document.getElementById('editPostAudience');
-    var editRecipientChecks = document.querySelectorAll('#editPostRecipientsList .edit-post-recipient-check');
-    var recipients = Array.isArray(p.recipients) ? p.recipients : [];
-
-    if (editAudience) {
-        editAudience.value = p.audience || 'selected';
-    }
-
-    editRecipientChecks.forEach(function (cb) {
-        cb.checked = recipients.indexOf(cb.value) !== -1;
-    });
-
-    syncRecipientsVisibilityByIds('editPostAudience', 'editPostRecipientsWrap');
-    new bootstrap.Modal(document.getElementById('editPostModal')).show();
-}
-
-document.addEventListener('DOMContentLoaded', function () {
-    bindAudienceAndSearch('postAudience', 'postRecipientsWrap', 'postRecipientsSearch', '#postRecipientsList .group-member-item');
-    bindAudienceAndSearch('editPostAudience', 'editPostRecipientsWrap', 'editPostRecipientsSearch', '#editPostRecipientsList .group-member-item');
-});
-
-function syncRecipientsVisibilityByIds(audienceId, wrapId) {
-    var audienceEl = document.getElementById(audienceId);
-    var recipientsWrap = document.getElementById(wrapId);
-    if (!audienceEl || !recipientsWrap) return;
-    recipientsWrap.classList.toggle('d-none', audienceEl.value !== 'selected');
-}
-
-function bindAudienceAndSearch(audienceId, wrapId, searchId, itemsSelector) {
-    var audienceEl = document.getElementById(audienceId);
-    var recipientsSearch = document.getElementById(searchId);
-
-    if (audienceEl) {
-        audienceEl.addEventListener('change', function () {
-            syncRecipientsVisibilityByIds(audienceId, wrapId);
-        });
-        syncRecipientsVisibilityByIds(audienceId, wrapId);
-    }
-
-    if (recipientsSearch) {
-        recipientsSearch.addEventListener('input', function () {
-            var q = recipientsSearch.value.toLowerCase();
-            var items = document.querySelectorAll(itemsSelector);
-            items.forEach(function (item) {
-                item.style.display = item.textContent.toLowerCase().indexOf(q) !== -1 ? '' : 'none';
-            });
-        });
-    }
-}
-</script>
+<div id="adminTabContent"><?= $tabHtml ?></div>
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>

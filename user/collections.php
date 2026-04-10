@@ -451,15 +451,16 @@ window.collectionSharesByCollection = <?= json_encode($myCollectionSharesPayload
         </div>
     <?php endif; ?>
 <?php else: ?>
-    <ul class="nav nav-tabs mb-4">
+    <ul class="nav nav-tabs mb-4" id="collectionsTabsNav">
         <li class="nav-item">
-            <a class="nav-link <?= $activeTab === 'mine' ? 'active' : '' ?>" href="?tab=mine"><?= t('my_collections') ?></a>
+            <a class="nav-link js-collections-tab-link <?= $activeTab === 'mine' ? 'active' : '' ?>" href="?tab=mine"><?= t('my_collections') ?></a>
         </li>
         <li class="nav-item">
-            <a class="nav-link <?= $activeTab === 'shared' ? 'active' : '' ?>" href="?tab=shared"><?= t('shared_with_me') ?></a>
+            <a class="nav-link js-collections-tab-link <?= $activeTab === 'shared' ? 'active' : '' ?>" href="?tab=shared"><?= t('shared_with_me') ?></a>
         </li>
     </ul>
 
+    <div id="collectionsTabContent">
     <?php if ($activeTab === 'mine'): ?>
         <div class="d-flex justify-content-end mb-3">
             <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#createModal">
@@ -520,6 +521,7 @@ window.collectionSharesByCollection = <?= json_encode($myCollectionSharesPayload
         </div>
 
     <?php else: ?>
+        <div id="sharedCollectionsTabContent">
         <?php if (empty($sharedCollections)): ?>
             <div class="alert alert-info"><?= t('no_collections') ?></div>
         <?php else: ?>
@@ -582,7 +584,9 @@ window.collectionSharesByCollection = <?= json_encode($myCollectionSharesPayload
                 <?php endforeach; ?>
             </div>
         <?php endif; ?>
+        </div>
     <?php endif; ?>
+    </div>
 
     <div class="modal fade" id="createModal" tabindex="-1">
         <div class="modal-dialog">

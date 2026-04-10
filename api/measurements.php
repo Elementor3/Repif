@@ -12,8 +12,9 @@ if (!isLoggedIn()) {
     exit;
 }
 
-$username = $_SESSION['username'];
 $request = $_SERVER['REQUEST_METHOD'] === 'POST' ? $_POST : $_GET;
+$username = $_SESSION['username'];
+$isAdminAll = isAdmin() && (string)($request['admin_all'] ?? '') === '1';
 $action = $request['action'] ?? '';
 
 function normalizeMeasurementFilterDateTime(string $value, bool $isEnd): string {
@@ -51,9 +52,25 @@ function normalizeMeasurementFilterDateTime(string $value, bool $isEnd): string 
     }
 }
 
-$myStations = getStationsFromOwnedMeasurements($conn, $username);
+$myStations = $isAdminAll
+    ? $conn->query(
+        "SELECT DISTINCT m.fk_station AS pk_serialNumber,
+                COALESCE(
+                    NULLIF((SELECT h1.name
+                            FROM ownership_history h1
+                            WHERE h1.fk_serialNumber = m.fk_station
+                            ORDER BY (h1.unregisteredAt IS NULL) DESC, h1.registeredAt DESC, h1.pk_id DESC
+                            LIMIT 1), ''),
+                    m.fk_station
+                ) AS name
+         FROM measurement m
+         ORDER BY name ASC"
+    )->fetch_all(MYSQLI_ASSOC)
+    : getStationsFromOwnedMeasurements($conn, $username);
 $stationSerials = array_column($myStations, 'pk_serialNumber');
-$myCollections = getUserCollectionsForMeasurements($conn, $username);
+$myCollections = $isAdminAll
+    ? $conn->query("SELECT * FROM collection ORDER BY createdAt DESC")->fetch_all(MYSQLI_ASSOC)
+    : getUserCollectionsForMeasurements($conn, $username);
 $collectionIds = array_map(static function ($row) {
     return (int)($row['pk_collectionID'] ?? 0);
 }, $myCollections);
@@ -64,7 +81,7 @@ if ($action === 'chart' || $action === 'poll') {
         'collection' => $_GET['collection'] ?? '',
         'date_from' => normalizeMeasurementFilterDateTime((string)($_GET['date_from'] ?? ''), false),
         'date_to' => normalizeMeasurementFilterDateTime((string)($_GET['date_to'] ?? ''), true),
-        'owner_id' => $username,
+        'owner_id' => $isAdminAll ? '' : $username,
     ];
 
     if ($filters['station'] && !in_array($filters['station'], $stationSerials)) {
@@ -75,7 +92,7 @@ if ($action === 'chart' || $action === 'poll') {
         $filters['collection'] = (int)$filters['collection'];
         if ($filters['collection'] <= 0 || !in_array($filters['collection'], $collectionIds, true)) {
             $filters['collection'] = '';
-        } else {
+        } elseif (!$isAdminAll) {
             foreach ($myCollections as $collectionRow) {
                 if ((int)($collectionRow['pk_collectionID'] ?? 0) === (int)$filters['collection']) {
                     $collectionOwner = (string)($collectionRow['fk_user'] ?? '');
@@ -143,7 +160,24 @@ if ($action === 'chart' || $action === 'poll') {
         $ids = [$ids];
     }
 
-    $deleted = deleteMeasurementsByIds($conn, $ids, $username);
+    if ($isAdminAll) {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), fn($id) => $id > 0)));
+        if (empty($ids)) {
+            $deleted = 0;
+        } else {
+            $placeholders = implode(',', array_fill(0, count($ids), '?'));
+            $types = str_repeat('i', count($ids));
+            $sql = "DELETE c, m FROM measurement m
+                    LEFT JOIN contains c ON c.pkfk_measurement = m.pk_measurementID
+                    WHERE m.pk_measurementID IN ($placeholders)";
+            $stmt = $conn->prepare($sql);
+            $stmt->bind_param($types, ...$ids);
+            $stmt->execute();
+            $deleted = $stmt->affected_rows;
+        }
+    } else {
+        $deleted = deleteMeasurementsByIds($conn, $ids, $username);
+    }
     echo json_encode([
         'success' => true,
         'deleted' => $deleted,

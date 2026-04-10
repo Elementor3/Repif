@@ -40,6 +40,98 @@ $(function () {
         return text.slice(0, maxLen).trimEnd() + '...';
     }
 
+    function buildCompactPagination($ul) {
+        if (!$ul || !$ul.length) return;
+
+        var $items = $ul.children('li.page-item');
+        if ($items.length <= 9) return;
+
+        var pages = [];
+        var hrefByPage = {};
+        var classByPage = {};
+        var current = 1;
+
+        $items.each(function () {
+            var $li = $(this);
+            var $a = $li.find('a.page-link').first();
+            if (!$a.length) return;
+            var txt = ($a.text() || '').trim();
+            var num = parseInt(txt, 10);
+            if (!isFinite(num)) return;
+
+            pages.push(num);
+            hrefByPage[num] = $a.attr('href') || '#';
+            classByPage[num] = $a.attr('class') || 'page-link';
+            if ($li.hasClass('active')) {
+                current = num;
+            }
+        });
+
+        pages = pages.filter(function (n, idx, arr) { return arr.indexOf(n) === idx; }).sort(function (a, b) { return a - b; });
+        if (pages.length <= 7) return;
+
+        var first = pages[0];
+        var last = pages[pages.length - 1];
+        if (current < first || current > last) current = first;
+
+        var keep = [first, current - 1, current, current + 1, last]
+            .filter(function (n) { return n >= first && n <= last; })
+            .filter(function (n, idx, arr) { return arr.indexOf(n) === idx; })
+            .sort(function (a, b) { return a - b; });
+
+        var prevPage = current > first ? current - 1 : null;
+        var nextPage = current < last ? current + 1 : null;
+
+        function pageLi(num, isActive) {
+            var href = hrefByPage[num] || '#';
+            var cls = classByPage[num] || 'page-link';
+            return '<li class="page-item' + (isActive ? ' active' : '') + '"><a class="' + cls + '" data-page="' + num + '" href="' + href + '">' + num + '</a></li>';
+        }
+
+        function arrowLi(symbol, targetPage, isDisabled) {
+            if (isDisabled) {
+                return '<li class="page-item disabled"><span class="page-link">' + symbol + '</span></li>';
+            }
+            var href = hrefByPage[targetPage] || '#';
+            var baseClass = classByPage[targetPage] || 'page-link';
+            return '<li class="page-item"><a class="' + baseClass + '" data-page="' + targetPage + '" href="' + href + '">' + symbol + '</a></li>';
+        }
+
+        function ellipsisLi() {
+            return '<li class="page-item disabled"><span class="page-link">...</span></li>';
+        }
+
+        var html = '';
+        html += arrowLi('&lt;', prevPage, !prevPage);
+        for (var i = 0; i < keep.length; i += 1) {
+            var n = keep[i];
+            var prev = i > 0 ? keep[i - 1] : null;
+            if (prev !== null && n - prev > 1) {
+                html += ellipsisLi();
+            }
+            html += pageLi(n, n === current);
+        }
+        html += arrowLi('&gt;', nextPage, !nextPage);
+
+        $ul.html(html);
+        $ul.attr('data-compact-pagination', '1');
+    }
+
+    function enhancePaginationUI(scope) {
+        var $scope = scope ? $(scope) : $(document);
+        $scope.find('ul.pagination').each(function () {
+            buildCompactPagination($(this));
+        });
+    }
+
+    window.enhancePaginationUI = enhancePaginationUI;
+    enhancePaginationUI(document);
+
+    var paginationObserver = new MutationObserver(function () {
+        enhancePaginationUI(document);
+    });
+    paginationObserver.observe(document.body, { childList: true, subtree: true });
+
     function toSingleLine(text) {
         return (text || '')
             .toString()

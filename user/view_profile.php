@@ -28,7 +28,9 @@ function resolveSafeBackUrl(string $candidate): string {
     }
 
     $path = (string)($parts['path'] ?? '');
-    if ($path === '' || strncmp($path, '/user/', 6) !== 0) {
+    $isUserPath = strncmp($path, '/user/', 6) === 0;
+    $isAdminPath = strncmp($path, '/admin/', 7) === 0;
+    if ($path === '' || (!$isUserPath && !$isAdminPath)) {
         return $default;
     }
 
