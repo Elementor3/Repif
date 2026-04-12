@@ -237,6 +237,115 @@
 	width: 150px;
 }
 
+#adminStationsTable {
+	white-space: nowrap;
+	margin-bottom: 0;
+	min-width: 100%;
+}
+
+.admin-stations-table-wrap {
+	overflow-x: auto;
+	overflow-y: hidden;
+	-webkit-overflow-scrolling: touch;
+}
+
+#adminStationsTable thead th {
+	font-size: 1rem;
+	font-weight: 700;
+	letter-spacing: 0.01em;
+	vertical-align: middle;
+}
+
+#adminStationsTable td {
+	font-size: 0.95rem;
+	vertical-align: middle;
+	max-width: 180px;
+}
+
+#adminStationsTable tbody tr:nth-child(odd) {
+	background-color: rgba(0, 0, 0, 0.02);
+}
+
+#adminStationsTable tbody tr:hover {
+	background-color: rgba(13, 110, 253, 0.08);
+}
+
+#adminStationsTable th:nth-child(1),
+#adminStationsTable td:nth-child(1) {
+	max-width: 88px;
+	width: 88px;
+}
+
+#adminStationsTable th:nth-child(2),
+#adminStationsTable td:nth-child(2) {
+	max-width: 130px;
+	width: 130px;
+}
+
+#adminStationsTable th:nth-child(3),
+#adminStationsTable td:nth-child(3) {
+	max-width: 130px;
+	width: 130px;
+}
+
+#adminStationsTable th:nth-child(4),
+#adminStationsTable td:nth-child(4) {
+	max-width: 90px;
+	width: 90px;
+}
+
+#adminStationsTable th:nth-child(5),
+#adminStationsTable td:nth-child(5),
+#adminStationsTable th:nth-child(7),
+#adminStationsTable td:nth-child(7) {
+	max-width: 112px;
+	width: 112px;
+}
+
+#adminStationsTable th:nth-child(6),
+#adminStationsTable td:nth-child(6) {
+	max-width: 90px;
+	width: 90px;
+}
+
+#adminStationsTable th:last-child,
+#adminStationsTable td:last-child {
+	max-width: 152px;
+	width: 152px;
+}
+
+#adminStationsTable td.admin-stations-description .admin-users-cell-text {
+	display: inline-block;
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+#adminStationsTable .admin-stations-user-col .collection-card-shares {
+	justify-content: center;
+}
+
+#adminStationsTable .admin-stations-user-col .collection-share-item {
+	width: 52px;
+}
+
+#adminStationsTable .admin-stations-user-col .collection-share-avatar {
+	width: 26px;
+	height: 26px;
+}
+
+#adminStationHistoryBody {
+	max-height: 62vh;
+	overflow-y: auto;
+}
+
+@media (max-width: 991.98px) {
+	#adminStationsTable {
+		min-width: 980px;
+	}
+}
+
 .admin-users-filters .form-label {
 	font-size: 0.9rem;
 	font-weight: 600;

@@ -5,6 +5,7 @@ var resizeTimer = null;
 var adminLiveRefreshTimer = null;
 var adminLiveRefreshBusy = false;
 var lastRestoredCollectionsModalToken = '';
+var lastRestoredStationHistoryToken = '';
 
 function escapeHtmlAdmin(value) {
 return String(value || '')
@@ -97,6 +98,14 @@ if (modal) {
 modal.hide();
 }
 });
+}
+
+function cleanupModalBackdrops() {
+document.querySelectorAll('.modal-backdrop').forEach(function (el) {
+el.remove();
+});
+document.body.classList.remove('modal-open');
+document.body.style.removeProperty('padding-right');
 }
 
 function urlWithAjaxFlag(rawUrl) {
@@ -283,7 +292,6 @@ if (dangerAlert) {
 setInlineAdminError(String(dangerAlert.textContent || '').trim());
 }
 }
-
 if (keepSlotsModalOpen) {
 syncAdminCollectionsConfigFromTabHtml(payload.tabHtml || '');
 if (reopenCollectionId > 0) {
@@ -889,6 +897,48 @@ scheduleSubmit(320);
 });
 }
 
+function initAdminStationsAutoFilter() {
+var form = document.getElementById('adminStationsFilterForm');
+if (!form || form.dataset.autoFilterInited === '1') {
+return;
+}
+form.dataset.autoFilterInited = '1';
+
+var submitTimer = null;
+function scheduleSubmit(delay) {
+window.clearTimeout(submitTimer);
+submitTimer = window.setTimeout(function () {
+form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+}, delay);
+}
+
+form.addEventListener('change', function (e) {
+var target = e.target;
+if (!target) {
+return;
+}
+
+if (target.matches('[data-role="search"]')) {
+return;
+}
+
+if (target.matches('input[name="stations_created_from"], input[name="stations_created_to"], input[name="stations_registered_from"], input[name="stations_registered_to"], input[type="checkbox"][name="stations_serial[]"], input[type="checkbox"][name="stations_name[]"], input[type="checkbox"][name="stations_description[]"], input[type="checkbox"][name="stations_created_by[]"], input[type="checkbox"][name="stations_registered_by[]"]')) {
+scheduleSubmit(120);
+}
+});
+
+form.addEventListener('input', function (e) {
+var target = e.target;
+if (!target) {
+return;
+}
+
+if (target.matches('input[name="stations_created_from"], input[name="stations_created_to"], input[name="stations_registered_from"], input[name="stations_registered_to"]')) {
+scheduleSubmit(320);
+}
+});
+}
+
 function initAdminUsersDatePickers() {
 if (!window.jQuery || !jQuery.fn.datetimepicker) {
 return;
@@ -930,6 +980,353 @@ $input.datetimepicker('show');
 }
 }
 });
+}
+
+function initAdminStationsDatePickers() {
+if (!window.jQuery || !jQuery.fn.datetimepicker) {
+return;
+}
+
+jQuery('#adminStationsFilterForm .js-admin-stations-datetime').each(function () {
+var $input = jQuery(this);
+if ($input.data('dtp-initialized')) {
+return;
+}
+
+$input.datetimepicker({
+format: 'd.m.Y H:i',
+timepicker: true,
+step: 5,
+dayOfWeekStart: 1,
+scrollInput: false,
+closeOnDateSelect: false,
+onClose: function () {
+$input.trigger('change');
+}
+});
+
+$input.data('dtp-initialized', true);
+});
+
+jQuery('#adminStationsFilterForm .measurement-picker-icon').off('click.adminStationsDate').on('click.adminStationsDate', function () {
+var $icon = jQuery(this);
+var $input = $icon.siblings('input.js-admin-stations-datetime').first();
+if (!$input.length) {
+$input = $icon.closest('.input-group').find('input.js-admin-stations-datetime').first();
+}
+if ($input.length) {
+$input.trigger('focus');
+try {
+$input.datetimepicker('show');
+} catch (e) {
+// Focus fallback only.
+}
+}
+});
+}
+
+function initAdminSingleCombos() {
+document.querySelectorAll('[data-single-combo]').forEach(function (combo) {
+if (combo.dataset.inited === '1') {
+return;
+}
+combo.dataset.inited = '1';
+
+var hidden = combo.querySelector('input[type="hidden"]');
+var toggle = combo.querySelector('[data-role="toggle"]');
+var summary = combo.querySelector('[data-role="summary"]');
+var panel = combo.querySelector('[data-role="panel"]');
+var search = combo.querySelector('[data-role="search"]');
+var optionsWrap = combo.querySelector('[data-role="options"]');
+if (!hidden || !toggle || !summary || !panel || !optionsWrap) {
+return;
+}
+
+function updateSummary() {
+var baseLabel = String(summary.getAttribute('data-base-label') || '').trim() || 'Select';
+var selected = optionsWrap.querySelector('input[data-role="single-option"]:checked');
+var selectedLabel = '-';
+if (selected) {
+var label = selected.closest('label');
+var textNode = label ? label.querySelector('span') : null;
+selectedLabel = String((textNode && textNode.textContent) || selected.value || '-').trim() || '-';
+hidden.value = selected.value || '';
+}
+summary.textContent = baseLabel + ': ' + selectedLabel;
+}
+
+function syncFromHidden() {
+var val = String(hidden.value || '');
+var target = optionsWrap.querySelector('input[data-role="single-option"][value="' + CSS.escape(val) + '"]');
+if (!target) {
+target = optionsWrap.querySelector('input[data-role="single-option"][value=""]');
+}
+if (target) {
+target.checked = true;
+}
+updateSummary();
+}
+
+toggle.addEventListener('click', function (e) {
+e.preventDefault();
+panel.classList.toggle('d-none');
+if (!panel.classList.contains('d-none') && search) {
+search.focus();
+}
+});
+
+if (search) {
+search.addEventListener('input', function () {
+var q = String(search.value || '').trim().toLowerCase();
+optionsWrap.querySelectorAll('.admin-multicombo-option').forEach(function (opt) {
+var label = String(opt.getAttribute('data-label') || '').toLowerCase();
+opt.classList.toggle('d-none', q !== '' && label.indexOf(q) === -1);
+});
+});
+}
+
+combo.addEventListener('change', function (e) {
+if (e.target && e.target.matches('input[data-role="single-option"]')) {
+updateSummary();
+panel.classList.add('d-none');
+}
+});
+
+hidden.addEventListener('change', syncFromHidden);
+
+document.addEventListener('click', function (e) {
+if (!combo.contains(e.target)) {
+panel.classList.add('d-none');
+}
+});
+
+syncFromHidden();
+});
+}
+
+function parseDateTimeInputToTs(value) {
+var raw = String(value || '').trim();
+if (!raw) {
+return null;
+}
+
+var eu = raw.match(/^(\d{2})\.(\d{2})\.(\d{4})(?:\s+(\d{2}):(\d{2}))?$/);
+if (eu) {
+var dd = Number(eu[1]);
+var mm = Number(eu[2]) - 1;
+var yyyy = Number(eu[3]);
+var hh = Number(eu[4] || '0');
+var mi = Number(eu[5] || '0');
+return new Date(yyyy, mm, dd, hh, mi, 0, 0).getTime();
+}
+
+var parsed = Date.parse(raw.replace(' ', 'T'));
+return isNaN(parsed) ? null : parsed;
+}
+
+function openAdminStationHistoryModal(serial, historyRows, stationMeasurementsUrl) {
+var modalEl = document.getElementById('adminStationHistoryModal');
+var titleEl = document.getElementById('adminStationHistoryTitle');
+var headerActionsEl = document.getElementById('adminStationHistoryHeaderActions');
+var bodyEl = document.getElementById('adminStationHistoryBody');
+if (!modalEl || !titleEl || !bodyEl) {
+return;
+}
+
+var rows = Array.isArray(historyRows) ? historyRows : [];
+titleEl.textContent = 'Ownership history: ' + String(serial || '');
+if (headerActionsEl) {
+headerActionsEl.innerHTML = '<a href="' + escapeHtmlAdmin(String(stationMeasurementsUrl || '#')) + '" class="btn btn-outline-secondary btn-sm admin-ajax-link" title="View all station measurements" aria-label="View all station measurements"><i class="bi bi-graph-up"></i></a>';
+}
+
+if (!rows.length) {
+bodyEl.innerHTML = '<div class="text-muted small">No history</div>';
+} else {
+bodyEl.innerHTML = '' +
+'<div class="row g-2 mb-2" id="adminStationHistoryFiltersRowFrom">' +
+'<div class="col-12 col-md-3">' +
+'<div class="admin-multicombo" data-multi-combo id="stationHistoryOwnerCombo">' +
+'<button type="button" class="btn btn-outline-secondary btn-sm text-start w-100 d-flex justify-content-between align-items-center" data-role="toggle"><span data-role="summary" data-base-label="Owner">Owner: all</span><i class="bi bi-chevron-down"></i></button>' +
+'<div class="admin-multicombo-panel d-none" data-role="panel"><input type="text" class="form-control form-control-sm mb-2" placeholder="Search..." data-role="search"><div class="admin-multicombo-options" data-role="options" id="stationHistoryOwnerOptions"></div></div>' +
+'</div>' +
+'</div>' +
+'<div class="col-12 col-md-3"><div class="input-group input-group-sm"><input type="text" class="form-control form-control-sm js-admin-station-history-datetime" id="stationHistoryFilterFrom" placeholder="Registered from"><span class="input-group-text measurement-picker-icon"><i class="bi bi-calendar-event"></i></span></div></div>' +
+'<div class="col-12 col-md-3"><div class="input-group input-group-sm"><input type="text" class="form-control form-control-sm js-admin-station-history-datetime" id="stationHistoryFilterUnregFrom" placeholder="Unregistered from"><span class="input-group-text measurement-picker-icon"><i class="bi bi-calendar-event"></i></span></div></div>' +
+'</div>' +
+'<div class="row g-2 mb-3" id="adminStationHistoryFiltersRowTo">' +
+'<div class="col-12 col-md-3 offset-md-3"><div class="input-group input-group-sm"><input type="text" class="form-control form-control-sm js-admin-station-history-datetime" id="stationHistoryFilterTo" placeholder="Registered untill"><span class="input-group-text measurement-picker-icon"><i class="bi bi-calendar-event"></i></span></div></div>' +
+'<div class="col-12 col-md-3"><div class="input-group input-group-sm"><input type="text" class="form-control form-control-sm js-admin-station-history-datetime" id="stationHistoryFilterUnregTo" placeholder="Unregistered untill"><span class="input-group-text measurement-picker-icon"><i class="bi bi-calendar-event"></i></span></div></div>' +
+'<div class="col-12 col-md-3 d-grid"><button type="button" class="btn btn-outline-secondary btn-sm" id="stationHistoryFilterClear">Clear</button></div>' +
+'</div>' +
+'<div class="table-responsive admin-station-history-rows-wrap"><table class="table table-sm align-middle mb-0"><thead><tr><th>Owner</th><th>Registered at</th><th>Unregistered at</th><th>Action</th></tr></thead><tbody id="adminStationHistoryRows"></tbody></table></div>';
+
+var ownerOptions = bodyEl.querySelector('#stationHistoryOwnerOptions');
+var fromInput = bodyEl.querySelector('#stationHistoryFilterFrom');
+var toInput = bodyEl.querySelector('#stationHistoryFilterTo');
+var unregFromInput = bodyEl.querySelector('#stationHistoryFilterUnregFrom');
+var unregToInput = bodyEl.querySelector('#stationHistoryFilterUnregTo');
+var clearBtn = bodyEl.querySelector('#stationHistoryFilterClear');
+var tbody = bodyEl.querySelector('#adminStationHistoryRows');
+
+var ownersMap = {};
+rows.forEach(function (row) {
+var uname = String(row.username || '').trim();
+if (!uname) {
+return;
+}
+ownersMap[uname] = true;
+});
+
+if (ownerOptions) {
+Object.keys(ownersMap).sort().forEach(function (uname) {
+var label = document.createElement('label');
+label.className = 'admin-multicombo-option';
+label.setAttribute('data-label', uname.toLowerCase());
+label.innerHTML = '<input type="checkbox" value="' + escapeHtmlAdmin(uname) + '" class="js-station-history-owner-opt"> <span>' + escapeHtmlAdmin(uname) + '</span>';
+ownerOptions.appendChild(label);
+});
+}
+
+initAdminMultiCombos();
+
+if (window.jQuery && jQuery.fn.datetimepicker) {
+var $historyInputs = jQuery('#adminStationHistoryModal .js-admin-station-history-datetime');
+$historyInputs.each(function () {
+var $input = jQuery(this);
+if ($input.data('dtp-initialized')) {
+return;
+}
+$input.datetimepicker({
+format: 'd.m.Y H:i',
+timepicker: true,
+step: 5,
+dayOfWeekStart: 1,
+scrollInput: false,
+closeOnDateSelect: false,
+onClose: function () {
+$input.trigger('input');
+}
+});
+$input.data('dtp-initialized', true);
+});
+
+jQuery('#adminStationHistoryModal .measurement-picker-icon').off('click.stationHistoryDate').on('click.stationHistoryDate', function () {
+var $icon = jQuery(this);
+var $input = $icon.siblings('input.js-admin-station-history-datetime').first();
+if ($input.length) {
+$input.trigger('focus');
+try {
+$input.datetimepicker('show');
+} catch (e) {
+// Focus fallback only.
+}
+}
+});
+}
+
+function renderRows() {
+if (!tbody) {
+return;
+}
+
+var selectedOwners = Array.prototype.slice.call(bodyEl.querySelectorAll('.js-station-history-owner-opt:checked')).map(function (el) {
+return String(el.value || '').trim();
+});
+var fromTs = parseDateTimeInputToTs(fromInput ? fromInput.value : '');
+var toTs = parseDateTimeInputToTs(toInput ? toInput.value : '');
+var unregFromTs = parseDateTimeInputToTs(unregFromInput ? unregFromInput.value : '');
+var unregToTs = parseDateTimeInputToTs(unregToInput ? unregToInput.value : '');
+
+var filtered = rows.filter(function (row) {
+var username = String(row.username || '').trim();
+if (selectedOwners.length && selectedOwners.indexOf(username) === -1) {
+return false;
+}
+
+var regTs = parseDateTimeInputToTs(String(row.registeredAtRaw || ''));
+if (fromTs !== null && regTs !== null && regTs < fromTs) {
+return false;
+}
+if (toTs !== null && regTs !== null && regTs > toTs) {
+return false;
+}
+
+var unregTs = parseDateTimeInputToTs(String(row.unregisteredAtRaw || ''));
+if (unregFromTs !== null) {
+if (unregTs === null || unregTs < unregFromTs) {
+return false;
+}
+}
+if (unregToTs !== null) {
+if (unregTs === null || unregTs > unregToTs) {
+return false;
+}
+}
+return true;
+});
+
+if (!filtered.length) {
+tbody.innerHTML = '<tr><td colspan="4" class="text-muted">No rows</td></tr>';
+return;
+}
+
+tbody.innerHTML = filtered.map(function (row) {
+var owner = buildMiniUserLink({
+username: String(row.username || ''),
+firstName: String(row.firstName || ''),
+lastName: String(row.lastName || ''),
+avatarUrl: String(row.avatarUrl || ''),
+profileUrl: String(row.profileUrl || '#')
+}, 'admin-modal-mini');
+var registeredAt = String(row.registeredAt || '-');
+var unregisteredAt = String(row.unregisteredAt || '-') || '-';
+var url = String(row.measurementsUrl || '#');
+var actionBtn = '<a href="' + escapeHtmlAdmin(url) + '" class="btn btn-sm btn-outline-primary admin-ajax-link" title="View measurements"><i class="bi bi-graph-up"></i></a>';
+return '<tr><td>' + owner + '</td><td>' + escapeHtmlAdmin(registeredAt) + '</td><td>' + escapeHtmlAdmin(unregisteredAt) + '</td><td>' + actionBtn + '</td></tr>';
+}).join('');
+}
+
+['input', 'change'].forEach(function (evt) {
+if (fromInput) {
+fromInput.addEventListener(evt, renderRows);
+}
+if (toInput) {
+toInput.addEventListener(evt, renderRows);
+}
+if (unregFromInput) {
+unregFromInput.addEventListener(evt, renderRows);
+}
+if (unregToInput) {
+unregToInput.addEventListener(evt, renderRows);
+}
+});
+
+bodyEl.addEventListener('change', function (e) {
+if (e.target && e.target.matches('.js-station-history-owner-opt')) {
+renderRows();
+}
+});
+
+if (clearBtn) {
+clearBtn.addEventListener('click', function () {
+Array.prototype.slice.call(bodyEl.querySelectorAll('.js-station-history-owner-opt')).forEach(function (el) {
+el.checked = false;
+});
+if (fromInput) fromInput.value = '';
+if (toInput) toInput.value = '';
+if (unregFromInput) unregFromInput.value = '';
+if (unregToInput) unregToInput.value = '';
+renderRows();
+});
+}
+
+renderRows();
+}
+
+bootstrap.Modal.getOrCreateInstance(modalEl).show();
+setTimeout(function () {
+bodyEl.scrollTop = 0;
+}, 0);
 }
 
 function openAdminUserFriendsModal(username, rawFriends) {
@@ -1066,9 +1463,12 @@ initAdminSlotDateTimeInputs();
 initAdminCollectionsDateTimePickers();
 hydrateSharedUsersCells();
 initAdminMultiCombos();
+initAdminSingleCombos();
 initAdminCollectionsAutoFilter();
 initAdminUsersAutoFilter();
+initAdminStationsAutoFilter();
 initAdminUsersDatePickers();
+initAdminStationsDatePickers();
 initAdminUsersFullTextViewer();
 fitCollectionDescriptionText();
 fitAdminUsersText();
@@ -1090,6 +1490,21 @@ if (token !== '0|' && token !== lastRestoredCollectionsModalToken) {
 lastRestoredCollectionsModalToken = token;
 if (sharedUsersModalId > 0) {
 openCollectionSharedUsersModal(sharedUsersModalId, sharedUsersModalName);
+}
+}
+}
+
+if (tab === 'stations') {
+var stationParams = new URLSearchParams(window.location.search || '');
+var historySerial = String(stationParams.get('open_station_history_serial') || '').trim();
+if (historySerial !== '') {
+var stationToken = historySerial;
+if (stationToken !== lastRestoredStationHistoryToken) {
+lastRestoredStationHistoryToken = stationToken;
+var historyBtn = document.querySelector('.js-admin-open-station-history[data-serial="' + CSS.escape(historySerial) + '"]');
+if (historyBtn) {
+historyBtn.click();
+}
 }
 }
 }
@@ -1143,7 +1558,11 @@ function editStation(s) {
 document.getElementById('editStSerial').value = s.pk_serialNumber;
 document.getElementById('editStName').value = s.name || '';
 document.getElementById('editStDesc').value = s.description || '';
-document.getElementById('editStRegBy').value = s.fk_registeredBy || '';
+var regByEl = document.getElementById('editStRegBy');
+if (regByEl) {
+regByEl.value = s.fk_registeredBy || '';
+regByEl.dispatchEvent(new Event('change', { bubbles: true }));
+}
 new bootstrap.Modal(document.getElementById('editStationModal')).show();
 }
 
@@ -1280,6 +1699,8 @@ return;
 }
 
 e.preventDefault();
+closeOpenModals();
+cleanupModalBackdrops();
 loadTabByUrl(ajaxLink.href, true);
 });
 
@@ -1358,6 +1779,20 @@ friends = [];
 }
 openAdminUserFriendsModal(username, friends);
 }
+
+var stationHistoryBtn = e.target.closest('.js-admin-open-station-history');
+if (stationHistoryBtn) {
+var stationSerial = String(stationHistoryBtn.getAttribute('data-serial') || '').trim();
+var stationRaw = String(stationHistoryBtn.getAttribute('data-history') || '[]');
+var stationAllMeasurementsUrl = String(stationHistoryBtn.getAttribute('data-station-measurements-url') || '#').trim();
+var history = [];
+try {
+history = JSON.parse(stationRaw);
+} catch (err) {
+history = [];
+}
+openAdminStationHistoryModal(stationSerial, history, stationAllMeasurementsUrl);
+}
 });
 
 document.addEventListener('input', function (e) {
@@ -1387,7 +1822,7 @@ fitAdminUsersText();
 });
 
 document.addEventListener('change', function (e) {
-var perPage = e.target.closest('#collectionsPerPage, #usersPerPage');
+var perPage = e.target.closest('#collectionsPerPage, #usersPerPage, #stationsPerPage');
 if (!perPage) {
 return;
 }

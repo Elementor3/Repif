@@ -390,18 +390,23 @@ $userPage = (int)($_GET['user_page'] ?? 1);
 $stationPage = (int)($_GET['station_page'] ?? 1);
 $postPage = (int)($_GET['post_page'] ?? 1);
 $usersPerPage = (int)($_GET['users_per_page'] ?? 20);
+$stationsPerPage = (int)($_GET['stations_per_page'] ?? 20);
 if (!in_array($usersPerPage, [10, 20, 50, 100], true)) {
     $usersPerPage = 20;
 }
+if (!in_array($stationsPerPage, [10, 20, 50, 100], true)) {
+    $stationsPerPage = 20;
+}
 
 $adminUserFilters = normalizeAdminUserFilters($_GET);
+$adminStationFilters = adminNormalizeStationFilters($_GET);
 
 $adminMeasurementFilters = [
     'station' => $_GET['station'] ?? '',
     'collection' => $_GET['collection'] ?? '',
     'date_from' => $_GET['date_from'] ?? '',
     'date_to' => $_GET['date_to'] ?? '',
-    'owner_id' => '',
+    'owner_id' => trim((string)($_GET['owner_id'] ?? '')),
 ];
 $adminMeasurementFilters['date_from'] = normalizeAdminMeasurementDateTimeInput((string)$adminMeasurementFilters['date_from'], false);
 $adminMeasurementFilters['date_to'] = normalizeAdminMeasurementDateTimeInput((string)$adminMeasurementFilters['date_to'], true);
@@ -485,6 +490,71 @@ $collectionsNameFilter = array_values(array_filter(array_map('trim', array_map('
 }));
 
 $allUsersForCollectionOwner = $conn->query("SELECT pk_username, firstName, lastName, avatar FROM user ORDER BY firstName ASC, lastName ASC, pk_username ASC")->fetch_all(MYSQLI_ASSOC);
+$allStationsForOptionRows = adminGetStationsForFilterOptions($conn);
+
+$stationFilterSerialOptions = [];
+$stationFilterNameOptions = [];
+$stationFilterDescriptionOptions = [];
+$stationFilterCreatedByOptions = [];
+$stationFilterRegisteredByOptions = [];
+
+foreach ($allStationsForOptionRows as $stOptRow) {
+    $optSerial = trim((string)($stOptRow['pk_serialNumber'] ?? ''));
+    $optName = trim((string)($stOptRow['name'] ?? ''));
+    $optDescription = trim((string)($stOptRow['description'] ?? ''));
+    $optCreatedBy = trim((string)($stOptRow['fk_createdBy'] ?? ''));
+    $optRegisteredBy = trim((string)($stOptRow['fk_registeredBy'] ?? ''));
+
+    if ($optSerial !== '') {
+        $stationFilterSerialOptions[$optSerial] = true;
+    }
+    if ($optName !== '') {
+        $stationFilterNameOptions[$optName] = true;
+    }
+    if ($optDescription !== '') {
+        $stationFilterDescriptionOptions[$optDescription] = true;
+    }
+    if ($optCreatedBy !== '') {
+        $stationFilterCreatedByOptions[$optCreatedBy] = [
+            'pk_username' => $optCreatedBy,
+            'firstName' => (string)($stOptRow['createdByFirstName'] ?? ''),
+            'lastName' => (string)($stOptRow['createdByLastName'] ?? ''),
+            'avatar' => (string)($stOptRow['createdByAvatar'] ?? ''),
+        ];
+    }
+    if ($optRegisteredBy !== '') {
+        $stationFilterRegisteredByOptions[$optRegisteredBy] = [
+            'pk_username' => $optRegisteredBy,
+            'firstName' => (string)($stOptRow['firstName'] ?? ''),
+            'lastName' => (string)($stOptRow['lastName'] ?? ''),
+            'avatar' => (string)($stOptRow['registeredByAvatar'] ?? ''),
+        ];
+    }
+}
+
+$stationFilterSerialOptions = array_keys($stationFilterSerialOptions);
+$stationFilterNameOptions = array_keys($stationFilterNameOptions);
+$stationFilterDescriptionOptions = array_keys($stationFilterDescriptionOptions);
+sort($stationFilterSerialOptions, SORT_NATURAL | SORT_FLAG_CASE);
+sort($stationFilterNameOptions, SORT_NATURAL | SORT_FLAG_CASE);
+sort($stationFilterDescriptionOptions, SORT_NATURAL | SORT_FLAG_CASE);
+
+$stationCreatedByOptions = array_values($stationFilterCreatedByOptions);
+$stationRegisteredByOptions = array_values($stationFilterRegisteredByOptions);
+usort($stationCreatedByOptions, static fn(array $a, array $b): int => strcmp((string)$a['pk_username'], (string)$b['pk_username']));
+usort($stationRegisteredByOptions, static fn(array $a, array $b): int => strcmp((string)$a['pk_username'], (string)$b['pk_username']));
+
+$stationSerialAllowed = array_fill_keys($stationFilterSerialOptions, true);
+$stationNameAllowed = array_fill_keys($stationFilterNameOptions, true);
+$stationDescAllowed = array_fill_keys($stationFilterDescriptionOptions, true);
+$stationCreatedByAllowed = array_fill_keys(array_column($stationCreatedByOptions, 'pk_username'), true);
+$stationRegisteredByAllowed = array_fill_keys(array_column($stationRegisteredByOptions, 'pk_username'), true);
+
+$adminStationFilters['serial'] = array_values(array_filter((array)($adminStationFilters['serial'] ?? []), static fn(string $v): bool => isset($stationSerialAllowed[$v])));
+$adminStationFilters['name'] = array_values(array_filter((array)($adminStationFilters['name'] ?? []), static fn(string $v): bool => isset($stationNameAllowed[$v])));
+$adminStationFilters['description'] = array_values(array_filter((array)($adminStationFilters['description'] ?? []), static fn(string $v): bool => isset($stationDescAllowed[$v])));
+$adminStationFilters['createdBy'] = array_values(array_filter((array)($adminStationFilters['createdBy'] ?? []), static fn(string $v): bool => isset($stationCreatedByAllowed[$v])));
+$adminStationFilters['registeredBy'] = array_values(array_filter((array)($adminStationFilters['registeredBy'] ?? []), static fn(string $v): bool => isset($stationRegisteredByAllowed[$v])));
 $collectionOwnerUsernames = array_column($allUsersForCollectionOwner, 'pk_username');
 
 $collectionsOwnerFilterInput = $_GET['collections_owner'] ?? [];
@@ -668,9 +738,53 @@ $allUsersForCollectionOwnerView = array_map(static function (array $u): array {
 $totalUsers = adminCountUsersFiltered($conn, $adminUserFilters);
 $totalUserPages = max(1, (int)ceil($totalUsers / $usersPerPage));
 $userPage = max(1, min($userPage, $totalUserPages));
-$totalStations = adminCountStations($conn);
+$totalStations = adminCountStationsFiltered($conn, $adminStationFilters);
+$totalStationPages = max(1, (int)ceil($totalStations / $stationsPerPage));
+$stationPage = max(1, min($stationPage, $totalStationPages));
 $users = adminGetUsersPageFiltered($conn, $userPage, $usersPerPage, $adminUserFilters);
-$stations = adminGetStationsPage($conn, $stationPage, $perPage);
+$stations = adminGetStationsPageFiltered($conn, $stationPage, $stationsPerPage, $adminStationFilters);
+$adminStationHistoryBySerial = [];
+foreach ($stations as $stationRow) {
+    $serialKey = (string)($stationRow['pk_serialNumber'] ?? '');
+    if ($serialKey === '') {
+        continue;
+    }
+
+    $historyRows = adminGetStationOwnershipHistory($conn, $serialKey);
+    $stationBackQuery = $_GET;
+    $stationBackQuery['tab'] = 'stations';
+    $stationBackQuery['open_station_history_serial'] = $serialKey;
+    unset($stationBackQuery['ajax_tab'], $stationBackQuery['admin_all']);
+    $stationBackUrl = '/admin/panel.php?' . http_build_query($stationBackQuery);
+
+    $adminStationHistoryBySerial[$serialKey] = array_map(static function (array $hRow) use ($stationBackUrl): array {
+        $owner = (string)($hRow['fk_ownerId'] ?? '');
+        $registeredRaw = (string)($hRow['registeredAt'] ?? '');
+        $unregisteredRaw = (string)($hRow['unregisteredAt'] ?? '');
+        $registeredForFilter = $registeredRaw !== '' ? formatDateTime($registeredRaw) : '';
+        $unregisteredForFilter = $unregisteredRaw !== '' ? formatDateTime($unregisteredRaw) : '';
+        $measurementFilters = [
+            'station' => (string)($hRow['fk_serialNumber'] ?? ''),
+            'owner_id' => $owner,
+            'date_from' => $registeredForFilter,
+            'date_to' => $unregisteredForFilter,
+            'back' => $stationBackUrl,
+        ];
+
+        return [
+            'username' => $owner,
+            'firstName' => (string)($hRow['firstName'] ?? ''),
+            'lastName' => (string)($hRow['lastName'] ?? ''),
+            'avatarUrl' => (string)(getAvatarUrl((string)($hRow['avatar'] ?? ''), $owner) ?? ''),
+            'profileUrl' => buildAdminProfileUrl($owner),
+            'registeredAt' => formatDateTime($registeredRaw),
+            'unregisteredAt' => formatDateTime($unregisteredRaw),
+            'registeredAtRaw' => $registeredRaw,
+            'unregisteredAtRaw' => $unregisteredRaw,
+            'measurementsUrl' => buildAdminMeasurementsUrl($measurementFilters),
+        ];
+    }, $historyRows);
+}
 $posts = getPosts($conn, $postPage, $perPage);
 $postTargetUsers = $conn->query("SELECT pk_username, firstName, lastName, role FROM user ORDER BY firstName ASC, lastName ASC, pk_username ASC")->fetch_all(MYSQLI_ASSOC);
 $allUsersForUserFilters = $conn->query("SELECT pk_username, firstName, lastName, email FROM user ORDER BY pk_username ASC")->fetch_all(MYSQLI_ASSOC);

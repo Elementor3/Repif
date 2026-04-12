@@ -14,7 +14,23 @@ foreach ($adminStationOptions as $option) {
         break;
     }
 }
+
+$measurementsBackUrl = trim((string)($_GET['back'] ?? ''));
+if ($measurementsBackUrl !== '') {
+    $parts = parse_url($measurementsBackUrl);
+    $isValid = $parts !== false && !isset($parts['scheme']) && !isset($parts['host']) && isset($parts['path']) && strncmp((string)$parts['path'], '/admin/', 7) === 0;
+    if (!$isValid) {
+        $measurementsBackUrl = '';
+    }
+}
 ?>
+
+<?php if ($measurementsBackUrl !== ''): ?>
+<div class="mb-3">
+    <a href="<?= e($measurementsBackUrl) ?>" class="btn btn-outline-secondary btn-sm admin-ajax-link"><i class="bi bi-arrow-left me-1"></i><?= t('back') ?></a>
+</div>
+<?php endif; ?>
+
 <div class="card filter-card mb-4">
     <div class="card-body">
         <form method="get" class="row g-2 align-items-end" id="measurementFiltersForm">
