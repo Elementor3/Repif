@@ -28,7 +28,9 @@ function resolveSafeBackUrl(string $candidate): string {
     }
 
     $path = (string)($parts['path'] ?? '');
-    if ($path === '' || strncmp($path, '/user/', 6) !== 0) {
+    $isUserPath = strncmp($path, '/user/', 6) === 0;
+    $isAdminPath = strncmp($path, '/admin/', 7) === 0;
+    if ($path === '' || (!$isUserPath && !$isAdminPath)) {
         return $default;
     }
 
@@ -47,6 +49,18 @@ $profile = getUserByUsername($conn, $viewUsername);
 if (!$profile) {
     header('Location: /user/friends.php');
     exit;
+}
+
+$isAdminViewer = isAdmin();
+$isAdminProfileView = $isAdminViewer && (trim((string)($_GET['admin_view'] ?? '')) === '1' || strncmp($backUrl, '/admin/', 7) === 0);
+
+$adminViewedFriends = [];
+$adminViewedStations = [];
+$adminViewedCollections = [];
+if ($isAdminProfileView) {
+    $adminViewedFriends = getFriends($conn, $viewUsername);
+    $adminViewedStations = getUserStationsList($conn, $viewUsername);
+    $adminViewedCollections = getUserCollections($conn, $viewUsername);
 }
 
 $chatBackUrl = '/user/view_profile.php?user=' . urlencode($viewUsername);
@@ -104,9 +118,111 @@ require_once __DIR__ . '/../includes/header.php';
                         <th><?= t('last_name') ?></th>
                         <td><?= e($profile['lastName']) ?></td>
                     </tr>
+                    <?php if ($isAdminProfileView): ?>
+                    <tr>
+                        <th>Email</th>
+                        <td><?= e((string)($profile['email'] ?? '-')) ?></td>
+                    </tr>
+                    <tr>
+                        <th>Email verified</th>
+                        <td>
+                            <?php if ((int)($profile['isEmailVerified'] ?? 0) === 1): ?>
+                                <span class="badge bg-success">Yes</span>
+                            <?php else: ?>
+                                <span class="badge bg-secondary">No</span>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <?php endif; ?>
                 </table>
             </div>
         </div>
+
+        <?php if ($isAdminProfileView): ?>
+        <div class="card mt-4">
+            <div class="card-header"><h5 class="mb-0">Friends list</h5></div>
+            <div class="card-body">
+                <?php if (empty($adminViewedFriends)): ?>
+                    <div class="text-muted">No friends</div>
+                <?php else: ?>
+                    <div class="d-flex flex-wrap gap-2">
+                        <?php foreach ($adminViewedFriends as $friend): ?>
+                            <?php $friendUsername = (string)($friend['pk_username'] ?? ''); ?>
+                            <a class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-2" href="<?= e('/user/view_profile.php?user=' . urlencode($friendUsername) . '&back=' . urlencode($backUrl) . '&admin_view=1') ?>">
+                                <?php $friendAvatar = getAvatarUrl((string)($friend['avatar'] ?? ''), $friendUsername); ?>
+                                <?php if ($friendAvatar): ?>
+                                    <img src="<?= e($friendAvatar) ?>" alt="avatar" class="rounded-circle" width="22" height="22">
+                                <?php else: ?>
+                                    <i class="bi bi-person-circle"></i>
+                                <?php endif; ?>
+                                <span>@<?= e($friendUsername) ?></span>
+                            </a>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <div class="card mt-4">
+            <div class="card-header"><h5 class="mb-0">Stations list</h5></div>
+            <div class="card-body">
+                <?php if (empty($adminViewedStations)): ?>
+                    <div class="text-muted">No stations</div>
+                <?php else: ?>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Serial</th>
+                                    <th>Name</th>
+                                    <th>Registered at</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($adminViewedStations as $station): ?>
+                                    <tr>
+                                        <td><?= e((string)($station['pk_serialNumber'] ?? '')) ?></td>
+                                        <td><?= e((string)($station['name'] ?? '')) ?></td>
+                                        <td><?= e(formatDateTime((string)($station['registeredAt'] ?? ''))) ?></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <div class="card mt-4">
+            <div class="card-header"><h5 class="mb-0">Collections list</h5></div>
+            <div class="card-body">
+                <?php if (empty($adminViewedCollections)): ?>
+                    <div class="text-muted">No collections</div>
+                <?php else: ?>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Name</th>
+                                    <th>Created at</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($adminViewedCollections as $collection): ?>
+                                    <tr>
+                                        <td><?= e((string)($collection['pk_collectionID'] ?? '')) ?></td>
+                                        <td><?= e((string)($collection['name'] ?? '')) ?></td>
+                                        <td><?= e(formatDateTime((string)($collection['createdAt'] ?? ''))) ?></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+        <?php endif; ?>
     </div>
 </div>
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>

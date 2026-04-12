@@ -1,8 +1,17 @@
-(function () {
+function initMeasurementsClient() {
+    if (typeof window.__measurementsCleanup === 'function') {
+        window.__measurementsCleanup();
+    }
+
     var cfgEl = document.getElementById('measurementsClientConfig');
     if (!cfgEl) {
         return;
     }
+
+    if (cfgEl.dataset.initialized === '1') {
+        return;
+    }
+    cfgEl.dataset.initialized = '1';
 
     var config = {};
     try {
@@ -11,9 +20,15 @@
         config = {};
     }
 
+    var apiEndpoint = String(config.apiEndpoint || '/api/measurements.php');
+    var pagePath = String(config.pagePath || '/user/measurements.php');
+    var adminMode = !!config.adminMode;
+    var showOwnerColumns = !!config.showOwnerColumns;
+
     var currentPage = Number(config.page || 1);
     var perPage = Number(config.perPage || 20);
     var pollTimer = null;
+    var chartPollTimer = null;
     var chartInstance = null;
     var selectedChartMetric = 'temperature';
     var paginationTemplate = String(config.paginationTemplate || 'Showing {from} to {to} of {total}');
@@ -29,6 +44,9 @@
         lightIntensity: [],
         airQuality: []
     };
+    var chartOwnershipMapCache = {};
+    var chartOwnershipTransitions = [];
+    var chartHoveredOwnershipTransition = null;
     var isChartLoading = false;
     var pendingChartReload = false;
     var chartDataLoaded = {
@@ -51,6 +69,7 @@
     var chartStationSearchQuery = '';
     var chartStationPickerCollapse = null;
     var chartStationColorAssignments = {};
+    var lastRowsRenderSignature = '';
     var measurementFiltersStateKey = 'measurements.filters.state.v1';
     var collectionOptions = Array.isArray(config.collectionOptions) ? config.collectionOptions : [];
     var stationOptions = Array.isArray(config.stationOptions) ? config.stationOptions : [];
@@ -58,6 +77,9 @@
         ? config.collectionStationsMap
         : {};
     var filterNoResultsText = String(config.filterNoResultsText || 'No results found');
+    var uiText = (config.uiText && typeof config.uiText === 'object') ? config.uiText : {};
+    var confirmDeleteOneText = String(uiText.confirmDeleteOne || 'Delete this measurement?');
+    var confirmDeleteSelectedText = String(uiText.confirmDeleteSelected || 'Delete selected measurements?');
 
     function normalizeFilterDateTimeForApi(value) {
         var raw = String(value || '').trim();
@@ -448,11 +470,29 @@
             return;
         }
 
+        function getFieldValue(name) {
+            var field = form.querySelector('[name="' + name + '"]');
+            return field ? String(field.value || '') : '';
+        }
+
+        function getCheckedValues(name) {
+            return Array.from(form.querySelectorAll('input[type="checkbox"][name="' + name + '"]:checked')).map(function (cb) {
+                return String(cb.value || '').trim();
+            }).filter(function (v) {
+                return v !== '';
+            });
+        }
+
         var payload = {
-            station: (form.querySelector('[name="station"]') || {}).value || '',
-            collection: (form.querySelector('[name="collection"]') || {}).value || '',
-            date_from: (form.querySelector('[name="date_from"]') || {}).value || '',
-            date_to: (form.querySelector('[name="date_to"]') || {}).value || '',
+            measurement_id: getFieldValue('measurement_id'),
+            station: getFieldValue('station'),
+            station_list: getCheckedValues('station[]'),
+            collection: getFieldValue('collection'),
+            collection_list: getCheckedValues('collection[]'),
+            owner_id: getFieldValue('owner_id'),
+            owner_id_list: getCheckedValues('owner_id[]'),
+            date_from: getFieldValue('date_from'),
+            date_to: getFieldValue('date_to'),
             ts: Date.now()
         };
 
@@ -482,13 +522,29 @@
 
         var stationField = form.querySelector('[name="station"]');
         var collectionField = form.querySelector('[name="collection"]');
+        var measurementIdField = form.querySelector('[name="measurement_id"]');
+        var ownerField = form.querySelector('[name="owner_id"]');
         var dateFromField = form.querySelector('[name="date_from"]');
         var dateToField = form.querySelector('[name="date_to"]');
-        if (!stationField || !collectionField || !dateFromField || !dateToField) {
+        if (!dateFromField || !dateToField) {
             return false;
         }
 
-        var hasInitialValues = !!(stationField.value || collectionField.value || dateFromField.value || dateToField.value);
+        var stationChecks = form.querySelectorAll('input[type="checkbox"][name="station[]"]');
+        var collectionChecks = form.querySelectorAll('input[type="checkbox"][name="collection[]"]');
+        var ownerChecks = form.querySelectorAll('input[type="checkbox"][name="owner_id[]"]');
+
+        var hasInitialValues = !!(
+            (measurementIdField && measurementIdField.value)
+            || (stationField && stationField.value)
+            || (collectionField && collectionField.value)
+            || (ownerField && ownerField.value)
+            || dateFromField.value
+            || dateToField.value
+            || Array.from(stationChecks).some(function (cb) { return cb.checked; })
+            || Array.from(collectionChecks).some(function (cb) { return cb.checked; })
+            || Array.from(ownerChecks).some(function (cb) { return cb.checked; })
+        );
         if (hasInitialValues) {
             return false;
         }
@@ -513,8 +569,26 @@
             return false;
         }
 
-        stationField.value = String(payload.station || '');
-        collectionField.value = String(payload.collection || '');
+        if (measurementIdField) {
+            measurementIdField.value = String(payload.measurement_id || '');
+        }
+        if (stationField) {
+            stationField.value = String(payload.station || '');
+        }
+        if (collectionField) {
+            collectionField.value = String(payload.collection || '');
+        }
+        if (ownerField) {
+            ownerField.value = String(payload.owner_id || '');
+        }
+
+        var stationSet = Array.isArray(payload.station_list) ? payload.station_list.reduce(function (acc, v) { acc[String(v)] = true; return acc; }, {}) : {};
+        var collectionSet = Array.isArray(payload.collection_list) ? payload.collection_list.reduce(function (acc, v) { acc[String(v)] = true; return acc; }, {}) : {};
+        var ownerSet = Array.isArray(payload.owner_id_list) ? payload.owner_id_list.reduce(function (acc, v) { acc[String(v)] = true; return acc; }, {}) : {};
+        stationChecks.forEach(function (cb) { cb.checked = !!stationSet[String(cb.value || '')]; });
+        collectionChecks.forEach(function (cb) { cb.checked = !!collectionSet[String(cb.value || '')]; });
+        ownerChecks.forEach(function (cb) { cb.checked = !!ownerSet[String(cb.value || '')]; });
+
         dateFromField.value = String(payload.date_from || '');
         dateToField.value = String(payload.date_to || '');
         return true;
@@ -596,12 +670,23 @@
 
     function getSelectedFilterLabel(fieldName) {
         var field = document.querySelector('#measurementFiltersForm [name="' + fieldName + '"]');
-        if (!field || !field.value) {
+        if (field && field.value) {
+            var option = field.options ? field.options[field.selectedIndex] : null;
+            return option ? option.text.trim() : '';
+        }
+
+        var checked = document.querySelector('#measurementFiltersForm input[type="checkbox"][name="' + fieldName + '[]"]:checked');
+        if (!checked) {
             return '';
         }
 
-        var option = field.options[field.selectedIndex];
-        return option ? option.text.trim() : '';
+        var label = checked.closest('label');
+        if (!label) {
+            return '';
+        }
+
+        var text = label.textContent || '';
+        return String(text).trim();
     }
 
     function buildFilenameFilterSuffix() {
@@ -648,10 +733,19 @@
                 return;
             }
             if (value !== '') {
+                var isArrayKey = /\[\]$/.test(key);
                 if (key === 'date_from' || key === 'date_to') {
-                    params.set(key, normalizeFilterDateTimeForApi(value));
+                    if (isArrayKey) {
+                        params.append(key, normalizeFilterDateTimeForApi(value));
+                    } else {
+                        params.set(key, normalizeFilterDateTimeForApi(value));
+                    }
                 } else {
-                    params.set(key, value);
+                    if (isArrayKey) {
+                        params.append(key, value);
+                    } else {
+                        params.set(key, value);
+                    }
                 }
             }
         });
@@ -663,7 +757,7 @@
         var params = getFilterParams();
         params.set('page', String(currentPage));
         params.set('per_page', String(perPage));
-        window.history.replaceState({}, '', '/user/measurements.php?' + params.toString());
+        window.history.replaceState({}, '', pagePath + '?' + params.toString());
     }
 
     function updateExportLink() {
@@ -703,20 +797,60 @@
     }
 
     function buildRowHtml(row) {
+        var rowId = String(row.pk_measurementID || '').trim();
         var temperature = row.temperature !== null ? escapeHtml(row.temperature) + ' &deg;C' : '-';
         var pressure = row.airPressure !== null ? escapeHtml(row.airPressure) + ' hPa' : '-';
         var light = row.lightIntensity !== null ? escapeHtml(row.lightIntensity) + ' lux' : '-';
         var airQuality = row.airQuality !== null ? escapeHtml(row.airQuality) + ' ppm' : '-';
         var stationName = escapeHtml(row.station_name || row.fk_station);
+        var ownerId = escapeHtml(row.fk_ownerId || '');
+        var ownerName = escapeHtml(row.owner_name || row.fk_ownerId || '');
 
-        return '<tr>' +
-            '<td>' + escapeHtml(formatDateTime(row.timestamp)) + '</td>' +
-            '<td>' + stationName + '</td>' +
-            '<td>' + temperature + '</td>' +
+        var ownerCell = '<span class="text-muted">-</span>';
+        if (row.fk_ownerId) {
+            ownerCell = '<div class="collection-card-shares justify-content-center"><a class="collection-share-item admin-shared-mini" href="/user/view_profile.php?user=' + encodeURIComponent(String(row.fk_ownerId)) + '&admin_view=1" title="' + ownerName + '">' +
+                '<span class="collection-share-avatar"><i class="bi bi-person-circle"></i></span>' +
+                '<span class="collection-share-username">@' + ownerId + '</span></a></div>';
+        }
+
+        var rawPayload = encodeURIComponent(JSON.stringify({
+            pk_measurementID: row.pk_measurementID,
+            timestamp: row.timestamp,
+            temperature: row.temperature,
+            airPressure: row.airPressure,
+            lightIntensity: row.lightIntensity,
+            airQuality: row.airQuality
+        }));
+
+        var html = '<tr>';
+
+        if (adminMode) {
+            html += '<td><input type="checkbox" class="form-check-input js-measurement-row-check" value="' + escapeHtml(rowId) + '"></td>' +
+                '<td>' + escapeHtml(rowId) + '</td>';
+        }
+
+        html += '<td>' + escapeHtml(formatDateTime(row.timestamp)) + '</td>' +
+            '<td>' + stationName + '</td>';
+
+        if (showOwnerColumns) {
+            html += '<td>' + ownerCell + '</td>';
+        }
+
+        html += '<td>' + temperature + '</td>' +
             '<td>' + pressure + '</td>' +
             '<td>' + light + '</td>' +
-            '<td>' + airQuality + '</td>' +
-            '</tr>';
+            '<td>' + airQuality + '</td>';
+
+        if (adminMode) {
+            html += '<td><div class="admin-actions-row">' +
+                '<button type="button" class="btn btn-sm btn-outline-primary js-measurement-edit" data-measurement="' + rawPayload + '" title="Edit" aria-label="Edit"><i class="bi bi-pencil"></i></button>' +
+                '<button type="button" class="btn btn-sm btn-outline-danger js-measurement-delete" data-id="' + escapeHtml(rowId) + '" title="Delete" aria-label="Delete"><i class="bi bi-trash"></i></button>' +
+                '</div></td>';
+        }
+
+        html += '</tr>';
+
+        return html;
     }
 
     function renderRows(rows) {
@@ -725,8 +859,10 @@
         var emptyAlert = document.getElementById('noMeasurementsAlert');
         var scrollHint = document.getElementById('measurementsScrollHint');
 
+        var nextSignature = JSON.stringify(rows || []);
         if (!rows.length) {
             tbody.innerHTML = '';
+            lastRowsRenderSignature = nextSignature;
             tableWrap.classList.add('d-none');
             emptyAlert.classList.remove('d-none');
             emptyAlert.textContent = noDataText;
@@ -736,7 +872,17 @@
             return;
         }
 
+        if (lastRowsRenderSignature === nextSignature) {
+            tableWrap.classList.remove('d-none');
+            emptyAlert.classList.add('d-none');
+            if (scrollHint) {
+                scrollHint.classList.remove('d-none');
+            }
+            return;
+        }
+
         tbody.innerHTML = rows.map(buildRowHtml).join('');
+        lastRowsRenderSignature = nextSignature;
         tableWrap.classList.remove('d-none');
         emptyAlert.classList.add('d-none');
         if (scrollHint) {
@@ -1074,6 +1220,138 @@
         return !!(chartsPane && chartsPane.classList.contains('active') && chartsPane.classList.contains('show'));
     }
 
+    function renderOwnershipDetailsTable(stationKey, transitionOwnerId) {
+        if (!adminMode) {
+            return;
+        }
+
+        var card = document.getElementById('measurementOwnershipDetailsCard');
+        var title = document.getElementById('measurementOwnershipDetailsTitle');
+        var tbody = document.getElementById('measurementOwnershipDetailsBody');
+        if (!card || !title || !tbody) {
+            return;
+        }
+
+        var rows = Array.isArray(chartOwnershipMapCache[stationKey]) ? chartOwnershipMapCache[stationKey] : [];
+        if (!rows.length) {
+            tbody.innerHTML = '<tr><td colspan="4" class="text-muted text-center py-2">No ownership history</td></tr>';
+            title.textContent = 'Ownership timeline: ' + stationKey;
+            card.classList.remove('d-none');
+            return;
+        }
+
+        title.textContent = 'Ownership timeline: ' + stationKey;
+        tbody.innerHTML = rows.map(function (row) {
+            var ownerId = String(row.fk_ownerId || '');
+            var ownerName = String(row.owner_name || ownerId || '-');
+            var isActive = transitionOwnerId && ownerId === transitionOwnerId;
+            return '<tr' + (isActive ? ' class="table-primary"' : '') + '>' +
+                '<td>' + escapeHtml(ownerId || '-') + '</td>' +
+                '<td>' + escapeHtml(ownerName) + '</td>' +
+                '<td>' + escapeHtml(formatDateTime(row.registeredAt || '')) + '</td>' +
+                '<td>' + escapeHtml(formatDateTime(row.unregisteredAt || '')) + '</td>' +
+                '</tr>';
+        }).join('');
+        card.classList.remove('d-none');
+    }
+
+    function setOwnershipHoverInfo(transition) {
+        var hoverInfo = document.getElementById('measurementOwnershipHoverInfo');
+        if (!hoverInfo || !adminMode) {
+            return;
+        }
+
+        if (!transition) {
+            hoverInfo.classList.add('d-none');
+            hoverInfo.textContent = '';
+            return;
+        }
+
+        var ownerId = String(transition.ownerId || '');
+        var ownerName = String(transition.ownerName || ownerId || '-');
+        hoverInfo.textContent = 'Owner from ' + formatDateTime(transition.timestampRaw) + ': ' + ownerName + (ownerId ? ' (@' + ownerId + ')' : '');
+        hoverInfo.classList.remove('d-none');
+    }
+
+    function findNearestTransition(chart, x) {
+        var transitions = Array.isArray(chartOwnershipTransitions) ? chartOwnershipTransitions : [];
+        var nearest = null;
+        var threshold = 7;
+
+        transitions.forEach(function (tr) {
+            var dx = Math.abs(Number(tr.pixelX || 0) - Number(x || 0));
+            if (dx > threshold) {
+                return;
+            }
+            if (!nearest || dx < nearest.dx) {
+                nearest = { item: tr, dx: dx };
+            }
+        });
+
+        return nearest ? nearest.item : null;
+    }
+
+    var ownershipTransitionPlugin = {
+        id: 'ownershipTransitionPlugin',
+        afterDatasetsDraw: function (chart) {
+            var transitions = Array.isArray(chartOwnershipTransitions) ? chartOwnershipTransitions : [];
+            if (!transitions.length) {
+                return;
+            }
+
+            var xScale = chart.scales && chart.scales.x;
+            var chartArea = chart.chartArea;
+            if (!xScale || !chartArea) {
+                return;
+            }
+
+            var ctx = chart.ctx;
+            ctx.save();
+            transitions.forEach(function (tr) {
+                var x = xScale.getPixelForValue(tr.labelIndex);
+                tr.pixelX = x;
+                ctx.beginPath();
+                ctx.setLineDash([4, 4]);
+                ctx.lineWidth = chartHoveredOwnershipTransition === tr ? 2.2 : 1.4;
+                ctx.strokeStyle = chartHoveredOwnershipTransition === tr ? '#0d6efd' : 'rgba(220,53,69,0.7)';
+                ctx.moveTo(x, chartArea.top + 2);
+                ctx.lineTo(x, chartArea.bottom - 2);
+                ctx.stroke();
+            });
+            ctx.restore();
+        },
+        afterEvent: function (chart, args) {
+            var evt = args && args.event ? args.event : null;
+            if (!evt || typeof evt.x !== 'number') {
+                return;
+            }
+
+            if (evt.type === 'mousemove') {
+                var nextHover = findNearestTransition(chart, evt.x);
+                if (nextHover !== chartHoveredOwnershipTransition) {
+                    chartHoveredOwnershipTransition = nextHover;
+                    setOwnershipHoverInfo(nextHover);
+                    chart.draw();
+                }
+            }
+
+            if (evt.type === 'mouseout') {
+                if (chartHoveredOwnershipTransition) {
+                    chartHoveredOwnershipTransition = null;
+                    setOwnershipHoverInfo(null);
+                    chart.draw();
+                }
+            }
+
+            if (evt.type === 'click') {
+                var clicked = findNearestTransition(chart, evt.x);
+                if (clicked) {
+                    renderOwnershipDetailsTable(clicked.stationKey, clicked.ownerId);
+                }
+            }
+        }
+    };
+
     function ensureChartInstance() {
         if (typeof Chart === 'undefined') {
             return null;
@@ -1107,6 +1385,21 @@
                 },
                 interaction: { mode: 'index', intersect: false },
                 plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function (context) {
+                                var ds = context.dataset || {};
+                                var stationKey = String(ds.stationKey || '');
+                                var rawLabels = (context.chart && context.chart.$rawLabels) ? context.chart.$rawLabels : [];
+                                var tsRaw = String(rawLabels[context.dataIndex] || '');
+                                var ownerMap = (context.chart && context.chart.$ownerByStationTs) ? context.chart.$ownerByStationTs : {};
+                                var ownerInfo = ownerMap[stationKey + '|' + tsRaw] || null;
+                                var metricValue = context.formattedValue || '-';
+                                var ownerLabel = ownerInfo ? ((ownerInfo.ownerName || ownerInfo.ownerId || '-') + (ownerInfo.ownerId ? ' (@' + ownerInfo.ownerId + ')' : '')) : '-';
+                                return (ds.label || 'Station') + ': ' + metricValue + ' | Owner: ' + ownerLabel;
+                            }
+                        }
+                    },
                     legend: {
                         display: true,
                         position: 'bottom',
@@ -1164,7 +1457,8 @@
                         }
                     }
                 }
-            }
+            },
+            plugins: [ownershipTransitionPlugin]
         });
 
         return chartInstance;
@@ -1227,6 +1521,7 @@
             }, 0);
             return {
                 label: stationName,
+                stationKey: stationKey,
                 data: stationMap[stationKey],
                 borderColor: getSeriesColorByIndex(colorIndex, 1),
                 backgroundColor: getSeriesColorByIndex(colorIndex, 0.18),
@@ -1241,9 +1536,88 @@
         });
 
         return {
+            labelsRaw: labelsRaw,
             labels: labelsPretty,
             datasets: datasets
         };
+    }
+
+    function buildOwnerByStationTimestamp(chartRows) {
+        var map = {};
+        (chartRows || []).forEach(function (row) {
+            var stationKey = String(row.fk_station || '').trim();
+            var tsRaw = String(row.timestamp || '').trim();
+            if (!stationKey || !tsRaw) {
+                return;
+            }
+            map[stationKey + '|' + tsRaw] = {
+                ownerId: String(row.fk_ownerId || ''),
+                ownerName: String(row.owner_name || row.fk_ownerId || '')
+            };
+        });
+        return map;
+    }
+
+    function buildOwnershipTransitions(chartRows, labelsRaw) {
+        var byStation = {};
+        var labelIndexMap = {};
+        var transitions = [];
+
+        (labelsRaw || []).forEach(function (ts, idx) {
+            if (labelIndexMap[String(ts)] === undefined) {
+                labelIndexMap[String(ts)] = idx;
+            }
+        });
+
+        (chartRows || []).forEach(function (row) {
+            var stationKey = String(row.fk_station || '').trim();
+            var tsRaw = String(row.timestamp || '').trim();
+            if (!stationKey || !tsRaw) {
+                return;
+            }
+            if (!byStation[stationKey]) {
+                byStation[stationKey] = [];
+            }
+            byStation[stationKey].push({
+                timestampRaw: tsRaw,
+                ownerId: String(row.fk_ownerId || ''),
+                ownerName: String(row.owner_name || row.fk_ownerId || '')
+            });
+        });
+
+        Object.keys(byStation).forEach(function (stationKey) {
+            var rows = byStation[stationKey];
+            rows.sort(function (a, b) {
+                return String(a.timestampRaw).localeCompare(String(b.timestampRaw));
+            });
+
+            var prevOwner = '';
+            rows.forEach(function (row) {
+                if (!prevOwner) {
+                    prevOwner = row.ownerId;
+                    return;
+                }
+                if (row.ownerId === prevOwner) {
+                    return;
+                }
+                var idx = labelIndexMap[row.timestampRaw];
+                if (idx === undefined) {
+                    prevOwner = row.ownerId;
+                    return;
+                }
+                transitions.push({
+                    stationKey: stationKey,
+                    labelIndex: idx,
+                    timestampRaw: row.timestampRaw,
+                    ownerId: row.ownerId,
+                    ownerName: row.ownerName,
+                    pixelX: 0
+                });
+                prevOwner = row.ownerId;
+            });
+        });
+
+        return transitions;
     }
 
     function renderChart(metricKey, chartRows) {
@@ -1269,6 +1643,11 @@
         var series = buildSeriesByStation(filteredRows, chartConfig.metricKey);
         chart.data.labels = series.labels;
         chart.data.datasets = series.datasets;
+        chart.$rawLabels = series.labelsRaw || [];
+        chart.$ownerByStationTs = buildOwnerByStationTimestamp(filteredRows);
+        chartOwnershipTransitions = buildOwnershipTransitions(filteredRows, series.labelsRaw || []);
+        chartHoveredOwnershipTransition = null;
+        setOwnershipHoverInfo(null);
         chart.options.scales.y.title.text = chartConfig.yTitle;
         chart.options.scales.x.ticks.maxTicksLimit = isMobileView() ? 5 : 8;
         chart.options.scales.x.ticks.font.size = isMobileView() ? 10 : 12;
@@ -1306,13 +1685,14 @@
         params.set('_ts', Date.now());
 
         try {
-            var res = await getJson('/api/measurements.php?' + params.toString());
+            var res = await getJson(apiEndpoint + '?' + params.toString());
             if (!res || !res.success) {
                 return;
             }
 
             var metricKey = res.metric || selectedChartMetric;
             chartDataCache[metricKey] = Array.isArray(res.data) ? res.data : [];
+            chartOwnershipMapCache = (res.ownership_map && typeof res.ownership_map === 'object') ? res.ownership_map : {};
             chartDataLoaded[metricKey] = true;
             if (isChartsTabActive()) {
                 requestAnimationFrame(function () {
@@ -1349,7 +1729,7 @@
         params.set('_ts', Date.now());
 
         try {
-            var res = await getJson('/api/measurements.php?' + params.toString());
+            var res = await getJson(apiEndpoint + '?' + params.toString());
             if (!res || !res.success) {
                 return;
             }
@@ -1369,6 +1749,9 @@
         selectedChartStations = {};
         userManuallyChangedStationSelection = false;
         chartStationColorAssignments = {};
+        chartOwnershipMapCache = {};
+        chartOwnershipTransitions = [];
+        chartHoveredOwnershipTransition = null;
         chartDataLoaded = {
             temperature: false,
             airPressure: false,
@@ -1382,6 +1765,15 @@
             airQuality: []
         };
         pendingChartReload = false;
+        setOwnershipHoverInfo(null);
+        var ownershipCard = document.getElementById('measurementOwnershipDetailsCard');
+        var ownershipBody = document.getElementById('measurementOwnershipDetailsBody');
+        if (ownershipCard) {
+            ownershipCard.classList.add('d-none');
+        }
+        if (ownershipBody) {
+            ownershipBody.innerHTML = '';
+        }
         pollMeasurements();
         if (isChartsTabActive()) {
             loadChartData(true);
@@ -1521,7 +1913,7 @@
             return;
         }
 
-        if (target.name === 'station' || target.name === 'collection' || target.name === 'date_from' || target.name === 'date_to') {
+        if (target.name === 'measurement_id' || target.name === 'station' || target.name === 'station[]' || target.name === 'collection' || target.name === 'collection[]' || target.name === 'owner_id' || target.name === 'owner_id[]' || target.name === 'date_from' || target.name === 'date_to') {
             saveMeasurementFiltersState();
             applyFiltersWithoutReload();
         }
@@ -1532,7 +1924,7 @@
         if (!target || !target.name) {
             return;
         }
-        if (target.name === 'station' || target.name === 'collection' || target.name === 'date_from' || target.name === 'date_to') {
+        if (target.name === 'measurement_id' || target.name === 'station' || target.name === 'station[]' || target.name === 'collection' || target.name === 'collection[]' || target.name === 'owner_id' || target.name === 'owner_id[]' || target.name === 'date_from' || target.name === 'date_to') {
             saveMeasurementFiltersState();
         }
     });
@@ -1547,14 +1939,26 @@
 
             var stationField = form.querySelector('[name="station"]');
             var collectionField = form.querySelector('[name="collection"]');
+            var measurementIdField = form.querySelector('[name="measurement_id"]');
+            var ownerField = form.querySelector('[name="owner_id"]');
             var dateFromField = form.querySelector('[name="date_from"]');
             var dateToField = form.querySelector('[name="date_to"]');
 
+            form.querySelectorAll('input[type="checkbox"][name="station[]"], input[type="checkbox"][name="collection[]"], input[type="checkbox"][name="owner_id[]"]').forEach(function (cb) {
+                cb.checked = false;
+            });
+
+            if (measurementIdField) {
+                measurementIdField.value = '';
+            }
             if (stationField) {
                 stationField.value = '';
             }
             if (collectionField) {
                 collectionField.value = '';
+            }
+            if (ownerField) {
+                ownerField.value = '';
             }
             if (dateFromField) {
                 dateFromField.value = '';
@@ -1575,6 +1979,167 @@
             clearMeasurementFiltersState();
             applyFiltersWithoutReload();
         });
+    }
+
+    if (adminMode) {
+        var selectAllBtn = document.getElementById('measurementsSelectAllBtn');
+        var unselectAllBtn = document.getElementById('measurementsUnselectAllBtn');
+        var deleteSelectedBtn = document.getElementById('measurementsDeleteSelectedBtn');
+
+        function getSelectedMeasurementIds() {
+            return Array.prototype.slice.call(document.querySelectorAll('.js-measurement-row-check:checked')).map(function (el) {
+                return String(el.value || '').trim();
+            }).filter(function (id) {
+                return id !== '';
+            });
+        }
+
+        if (selectAllBtn) {
+            selectAllBtn.addEventListener('click', function () {
+                document.querySelectorAll('.js-measurement-row-check').forEach(function (cb) {
+                    cb.checked = true;
+                });
+            });
+        }
+
+        if (unselectAllBtn) {
+            unselectAllBtn.addEventListener('click', function () {
+                document.querySelectorAll('.js-measurement-row-check').forEach(function (cb) {
+                    cb.checked = false;
+                });
+            });
+        }
+
+        if (deleteSelectedBtn) {
+            deleteSelectedBtn.addEventListener('click', async function () {
+                var ids = getSelectedMeasurementIds();
+                if (!ids.length) {
+                    return;
+                }
+                if (!window.confirm(confirmDeleteSelectedText)) {
+                    return;
+                }
+
+                var form = new FormData();
+                form.set('action', 'delete_selected');
+                form.set('admin_all', '1');
+                ids.forEach(function (id) {
+                    form.append('ids[]', id);
+                });
+
+                try {
+                    var res = await fetch(apiEndpoint, {
+                        method: 'POST',
+                        body: form,
+                        credentials: 'same-origin'
+                    });
+                    var payload = await res.json();
+                    if (payload && payload.success) {
+                        pollMeasurements();
+                    }
+                } catch (e) {
+                    console.error(e);
+                }
+            });
+        }
+
+        document.addEventListener('click', async function (e) {
+            var delBtn = e.target.closest('.js-measurement-delete');
+            if (delBtn) {
+                var id = String(delBtn.getAttribute('data-id') || '').trim();
+                if (!id) {
+                    return;
+                }
+                if (!window.confirm(confirmDeleteOneText)) {
+                    return;
+                }
+                var delForm = new FormData();
+                delForm.set('action', 'delete_one');
+                delForm.set('admin_all', '1');
+                delForm.set('id', id);
+                try {
+                    var delRes = await fetch(apiEndpoint, {
+                        method: 'POST',
+                        body: delForm,
+                        credentials: 'same-origin'
+                    });
+                    var delPayload = await delRes.json();
+                    if (delPayload && delPayload.success) {
+                        pollMeasurements();
+                    }
+                } catch (err) {
+                    console.error(err);
+                }
+                return;
+            }
+
+            var editBtn = e.target.closest('.js-measurement-edit');
+            if (!editBtn) {
+                return;
+            }
+
+            var raw = String(editBtn.getAttribute('data-measurement') || '');
+            if (!raw) {
+                return;
+            }
+            var data = null;
+            try {
+                data = JSON.parse(decodeURIComponent(raw));
+            } catch (err) {
+                data = null;
+            }
+            if (!data) {
+                return;
+            }
+
+            var idInput = document.getElementById('editMeasurementId');
+            var tsInput = document.getElementById('editMeasurementTimestamp');
+            var tempInput = document.getElementById('editMeasurementTemperature');
+            var pressureInput = document.getElementById('editMeasurementPressure');
+            var lightInput = document.getElementById('editMeasurementLight');
+            var aqInput = document.getElementById('editMeasurementAirQuality');
+            var modalEl = document.getElementById('editMeasurementModal');
+            if (!idInput || !tsInput || !tempInput || !pressureInput || !lightInput || !aqInput || !modalEl) {
+                return;
+            }
+
+            idInput.value = String(data.pk_measurementID || '');
+            tsInput.value = formatDateTime(data.timestamp || '');
+            tempInput.value = data.temperature !== null && data.temperature !== undefined ? data.temperature : '';
+            pressureInput.value = data.airPressure !== null && data.airPressure !== undefined ? data.airPressure : '';
+            lightInput.value = data.lightIntensity !== null && data.lightIntensity !== undefined ? data.lightIntensity : '';
+            aqInput.value = data.airQuality !== null && data.airQuality !== undefined ? data.airQuality : '';
+
+            bootstrap.Modal.getOrCreateInstance(modalEl).show();
+        });
+
+        var editForm = document.getElementById('editMeasurementForm');
+        if (editForm) {
+            editForm.addEventListener('submit', async function (e) {
+                e.preventDefault();
+                var fd = new FormData(editForm);
+                fd.set('action', 'update_one');
+                fd.set('admin_all', '1');
+                fd.set('timestamp', normalizeFilterDateTimeForApi(String(fd.get('timestamp') || '')));
+                try {
+                    var res = await fetch(apiEndpoint, {
+                        method: 'POST',
+                        body: fd,
+                        credentials: 'same-origin'
+                    });
+                    var payload = await res.json();
+                    if (payload && payload.success) {
+                        var modalEl = document.getElementById('editMeasurementModal');
+                        if (modalEl) {
+                            bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+                        }
+                        pollMeasurements();
+                    }
+                } catch (err) {
+                    console.error(err);
+                }
+            });
+        }
     }
 
     var dataPerPageSelect = document.getElementById('dataPerPageSelect');
@@ -1651,7 +2216,7 @@
         loadChartData(true);
     }
     pollTimer = setInterval(pollMeasurements, 10000);
-    var chartPollTimer = setInterval(function () {
+    chartPollTimer = setInterval(function () {
         if (isChartsTabActive()) {
             loadChartData(true);
         }
@@ -1700,12 +2265,19 @@
         updateUrlState();
     });
 
-    window.addEventListener('beforeunload', function () {
+    window.__measurementsCleanup = function () {
         if (pollTimer) {
             clearInterval(pollTimer);
+            pollTimer = null;
         }
         if (chartPollTimer) {
             clearInterval(chartPollTimer);
+            chartPollTimer = null;
         }
-    });
-})();
+    };
+
+    window.addEventListener('beforeunload', window.__measurementsCleanup);
+}
+
+window.initMeasurementsClient = initMeasurementsClient;
+initMeasurementsClient();

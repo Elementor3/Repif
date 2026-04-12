@@ -4,11 +4,29 @@ function buildMeasurementWhere(array $filters): array {
     $types = '';
     $params = [];
 
-    $ownerFilter = (string)($filters['fk_ownerId'] ?? $filters['owner_id'] ?? '');
-    if ($ownerFilter !== '') {
-        $where[] = "m.fk_ownerId = ?";
-        $types .= 's';
-        $params[] = $ownerFilter;
+    $measurementId = (int)($filters['measurement_id'] ?? 0);
+    if ($measurementId > 0) {
+        $where[] = "m.pk_measurementID = ?";
+        $types .= 'i';
+        $params[] = $measurementId;
+    }
+
+    $ownerFilterRaw = $filters['fk_ownerId'] ?? $filters['owner_id'] ?? '';
+    if (is_array($ownerFilterRaw)) {
+        $ownerFilters = array_values(array_filter(array_map(static fn($v) => trim((string)$v), $ownerFilterRaw), static fn($v) => $v !== ''));
+        if (!empty($ownerFilters)) {
+            $placeholders = implode(',', array_fill(0, count($ownerFilters), '?'));
+            $where[] = "m.fk_ownerId IN ($placeholders)";
+            $types .= str_repeat('s', count($ownerFilters));
+            $params = array_merge($params, $ownerFilters);
+        }
+    } else {
+        $ownerFilter = trim((string)$ownerFilterRaw);
+        if ($ownerFilter !== '') {
+            $where[] = "m.fk_ownerId = ?";
+            $types .= 's';
+            $params[] = $ownerFilter;
+        }
     }
 
     if (array_key_exists('allowed_stations', $filters)) {
@@ -23,13 +41,29 @@ function buildMeasurementWhere(array $filters): array {
         }
     }
 
-    if (!empty($filters['station'])) {
+    if (array_key_exists('station', $filters) && is_array($filters['station'])) {
+        $stations = array_values(array_filter(array_map(static fn($v) => trim((string)$v), $filters['station']), static fn($v) => $v !== ''));
+        if (!empty($stations)) {
+            $placeholders = implode(',', array_fill(0, count($stations), '?'));
+            $where[] = "m.fk_station IN ($placeholders)";
+            $types .= str_repeat('s', count($stations));
+            $params = array_merge($params, $stations);
+        }
+    } elseif (!empty($filters['station'])) {
         $where[] = "m.fk_station = ?";
         $types .= 's';
         $params[] = $filters['station'];
     }
 
-    if (isset($filters['collection']) && $filters['collection'] !== '') {
+    if (isset($filters['collection']) && is_array($filters['collection'])) {
+        $collections = array_values(array_filter(array_map('intval', $filters['collection']), static fn($v) => $v > 0));
+        if (!empty($collections)) {
+            $placeholders = implode(',', array_fill(0, count($collections), '?'));
+            $where[] = "EXISTS (SELECT 1 FROM contains c WHERE c.pkfk_measurement = m.pk_measurementID AND c.pkfk_collection IN ($placeholders))";
+            $types .= str_repeat('i', count($collections));
+            $params = array_merge($params, $collections);
+        }
+    } elseif (isset($filters['collection']) && $filters['collection'] !== '') {
         $where[] = "EXISTS (SELECT 1 FROM contains c WHERE c.pkfk_measurement = m.pk_measurementID AND c.pkfk_collection = ?)";
         $types .= 'i';
         $params[] = (int)$filters['collection'];
@@ -53,20 +87,27 @@ function buildMeasurementWhere(array $filters): array {
 function getMeasurements(mysqli $conn, array $filters, int $page, int $perPage): array {
     [$where, $types, $params] = buildMeasurementWhere($filters);
     $offset = ($page - 1) * $perPage;
-        $sql = "SELECT m.*,
-                                     COALESCE(
-                                             NULLIF((SELECT h1.name
-                                                             FROM ownership_history h1
-                                                             WHERE h1.fk_serialNumber = m.fk_station
-                                                                 AND h1.fk_ownerId = m.fk_ownerId
-                                                             ORDER BY h1.registeredAt DESC, h1.pk_id DESC
-                                                             LIMIT 1), ''),
-                                             m.fk_station
-                                     ) AS station_name
-                        FROM measurement m
-                        $where
-                        ORDER BY m.timestamp DESC
-                        LIMIT ? OFFSET ?";
+    $sql = "SELECT m.*,
+                     COALESCE(
+                         NULLIF((SELECT h1.name
+                                 FROM ownership_history h1
+                                 WHERE h1.fk_serialNumber = m.fk_station
+                                 AND h1.fk_ownerId = m.fk_ownerId
+                                 ORDER BY h1.registeredAt DESC, h1.pk_id DESC
+                                 LIMIT 1), ''),
+                         m.fk_station
+                     ) AS station_name,
+                     COALESCE(
+                         NULLIF(TRIM(CONCAT_WS(' ', ou.firstName, ou.lastName)), ''),
+                         ou.pk_username,
+                         m.fk_ownerId
+                     ) AS owner_name,
+                     ou.avatar AS owner_avatar
+            FROM measurement m
+            LEFT JOIN user ou ON ou.pk_username = m.fk_ownerId
+            $where
+            ORDER BY m.timestamp DESC
+            LIMIT ? OFFSET ?";
     $stmt = $conn->prepare($sql);
     $allTypes = $types . 'ii';
     $allParams = array_merge($params, [$perPage, $offset]);
@@ -153,6 +194,7 @@ function getChartData(mysqli $conn, array $filters): array {
                 SELECT m.pk_measurementID,
                        m.timestamp,
                        m.fk_station,
+                       m.fk_ownerId,
                                              COALESCE(
                                                      NULLIF((SELECT h1.name
                                                                      FROM ownership_history h1
@@ -162,8 +204,14 @@ function getChartData(mysqli $conn, array $filters): array {
                                                                      LIMIT 1), ''),
                                                      m.fk_station
                                              ) AS station_name,
+                       COALESCE(
+                           NULLIF(TRIM(CONCAT_WS(' ', ou.firstName, ou.lastName)), ''),
+                           ou.pk_username,
+                           m.fk_ownerId
+                       ) AS owner_name,
                        $metricSelect
                 FROM measurement m
+                LEFT JOIN user ou ON ou.pk_username = m.fk_ownerId
                 $where
                 ORDER BY m.timestamp DESC
                 LIMIT ?
@@ -175,6 +223,49 @@ function getChartData(mysqli $conn, array $filters): array {
     $stmt->bind_param($allTypes, ...$allParams);
     $stmt->execute();
     return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+}
+
+function getOwnershipHistoryByStationSerials(mysqli $conn, array $stationSerials): array {
+    $stationSerials = array_values(array_unique(array_filter(array_map(static fn($s) => trim((string)$s), $stationSerials), static fn($s) => $s !== '')));
+    if (empty($stationSerials)) {
+        return [];
+    }
+
+    $placeholders = implode(',', array_fill(0, count($stationSerials), '?'));
+    $types = str_repeat('s', count($stationSerials));
+    $sql = "SELECT h.fk_serialNumber,
+                   h.fk_ownerId,
+                   h.registeredAt,
+                   h.unregisteredAt,
+                   COALESCE(NULLIF(h.name, ''), h.fk_serialNumber) AS station_name,
+                   COALESCE(
+                       NULLIF(TRIM(CONCAT_WS(' ', u.firstName, u.lastName)), ''),
+                       u.pk_username,
+                       h.fk_ownerId
+                   ) AS owner_name,
+                   u.avatar AS owner_avatar
+            FROM ownership_history h
+            LEFT JOIN user u ON u.pk_username = h.fk_ownerId
+            WHERE h.fk_serialNumber IN ($placeholders)
+            ORDER BY h.fk_serialNumber ASC, h.registeredAt ASC, h.pk_id ASC";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param($types, ...$stationSerials);
+    $stmt->execute();
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+    $map = [];
+    foreach ($rows as $row) {
+        $serial = (string)($row['fk_serialNumber'] ?? '');
+        if ($serial === '') {
+            continue;
+        }
+        if (!isset($map[$serial])) {
+            $map[$serial] = [];
+        }
+        $map[$serial][] = $row;
+    }
+
+    return $map;
 }
 
 function exportCsv(mysqli $conn, array $filters): string {
@@ -189,11 +280,18 @@ function exportCsv(mysqli $conn, array $filters): string {
                                                              LIMIT 1), ''),
                                              m.fk_station
                                      ) AS station,
+                   m.fk_ownerId AS owner_id,
+                   COALESCE(
+                       NULLIF(TRIM(CONCAT_WS(' ', ou.firstName, ou.lastName)), ''),
+                       ou.pk_username,
+                       m.fk_ownerId
+                   ) AS owner,
                    m.temperature,
                    m.airPressure,
                    m.lightIntensity,
                    m.airQuality
             FROM measurement m
+            LEFT JOIN user ou ON ou.pk_username = m.fk_ownerId
             $where
             ORDER BY m.timestamp DESC";
     $stmt = $conn->prepare($sql);
@@ -202,7 +300,7 @@ function exportCsv(mysqli $conn, array $filters): string {
     }
     $stmt->execute();
     $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-    $csv = "Timestamp,Station,Temperature,Air Pressure,Light Intensity,Air Quality\n";
+    $csv = "Timestamp,Station,Owner ID,Owner,Temperature,Air Pressure,Light Intensity,Air Quality\n";
     foreach ($rows as $row) {
         $csv .= implode(',', array_map(fn($v) => '"' . str_replace('"', '""', (string)$v) . '"', $row)) . "\n";
     }
