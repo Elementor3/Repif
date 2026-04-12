@@ -8,6 +8,7 @@ require_once __DIR__ . '/../services/admin_posts.php';
 require_once __DIR__ . '/../services/notifications.php';
 require_once __DIR__ . '/../services/collections.php';
 require_once __DIR__ . '/../services/measurements.php';
+require_once __DIR__ . '/../services/friends.php';
 requireAdmin();
 
 $username = $_SESSION['username'];
@@ -85,7 +86,7 @@ function buildAdminProfileUrl(string $user): string {
         $back = '/admin/panel.php?tab=collections';
     }
 
-    return '/user/view_profile.php?user=' . urlencode($user) . '&back=' . urlencode($back);
+    return '/user/view_profile.php?user=' . urlencode($user) . '&back=' . urlencode($back) . '&admin_view=1';
 }
 
 function getAllStationsForAdminFilters(mysqli $conn): array {
@@ -156,8 +157,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $em = trim($_POST['email'] ?? '');
         $pw = $_POST['password'] ?? '';
         $role = $_POST['role'] ?? 'User';
+        $isEmailVerified = isset($_POST['is_email_verified']) && $_POST['is_email_verified'] === '1';
         if ($un && $fn && $ln && $em && $pw) {
-            if (adminCreateUser($conn, $un, $fn, $ln, $em, $pw, $role)) {
+            if (strlen($pw) < 6) {
+                $err = t('password_min_length');
+            } elseif (getUserByUsername($conn, $un)) {
+                $err = 'Username already exists';
+            } elseif (getUserByEmail($conn, $em)) {
+                $err = 'Email already exists';
+            } elseif (adminCreateUser($conn, $un, $fn, $ln, $em, $pw, $role)) {
+                $verifyFlag = $isEmailVerified ? 1 : 0;
+                $verifyStmt = $conn->prepare("UPDATE user SET isEmailVerified=?, emailVerifiedAt = CASE WHEN ? = 1 THEN NOW() ELSE NULL END WHERE pk_username=?");
+                $verifyStmt->bind_param("iis", $verifyFlag, $verifyFlag, $un);
+                $verifyStmt->execute();
                 $msg = t('success');
             } else {
                 $err = t('error_occurred');
@@ -170,7 +182,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $em = trim($_POST['email'] ?? '');
         $role = $_POST['role'] ?? 'User';
         $pw = $_POST['new_password'] ?? '';
-        if (adminUpdateUser($conn, $un, $fn, $ln, $em, $role, $pw ?: null)) {
+        $isEmailVerified = isset($_POST['is_email_verified']) && $_POST['is_email_verified'] === '1';
+        $existingEmailUser = getUserByEmail($conn, $em);
+        if ($pw !== '' && strlen($pw) < 6) {
+            $err = t('password_min_length');
+        } elseif ($existingEmailUser && (string)($existingEmailUser['pk_username'] ?? '') !== $un) {
+            $err = 'Email already exists';
+        } elseif (adminUpdateUser($conn, $un, $fn, $ln, $em, $role, $pw ?: null, $isEmailVerified)) {
             $msg = t('success');
         } else {
             $err = t('error_occurred');
@@ -371,6 +389,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $userPage = (int)($_GET['user_page'] ?? 1);
 $stationPage = (int)($_GET['station_page'] ?? 1);
 $postPage = (int)($_GET['post_page'] ?? 1);
+$usersPerPage = (int)($_GET['users_per_page'] ?? 20);
+if (!in_array($usersPerPage, [10, 20, 50, 100], true)) {
+    $usersPerPage = 20;
+}
+
+$adminUserFilters = normalizeAdminUserFilters($_GET);
 
 $adminMeasurementFilters = [
     'station' => $_GET['station'] ?? '',
@@ -641,12 +665,69 @@ $allUsersForCollectionOwnerView = array_map(static function (array $u): array {
     ];
 }, $allUsersForCollectionOwner);
 
-$totalUsers = adminCountUsers($conn);
+$totalUsers = adminCountUsersFiltered($conn, $adminUserFilters);
+$totalUserPages = max(1, (int)ceil($totalUsers / $usersPerPage));
+$userPage = max(1, min($userPage, $totalUserPages));
 $totalStations = adminCountStations($conn);
-$users = adminGetUsersPage($conn, $userPage, $perPage);
+$users = adminGetUsersPageFiltered($conn, $userPage, $usersPerPage, $adminUserFilters);
 $stations = adminGetStationsPage($conn, $stationPage, $perPage);
 $posts = getPosts($conn, $postPage, $perPage);
 $postTargetUsers = $conn->query("SELECT pk_username, firstName, lastName, role FROM user ORDER BY firstName ASC, lastName ASC, pk_username ASC")->fetch_all(MYSQLI_ASSOC);
+$allUsersForUserFilters = $conn->query("SELECT pk_username, firstName, lastName, email FROM user ORDER BY pk_username ASC")->fetch_all(MYSQLI_ASSOC);
+
+$userFilterUsernameOptions = [];
+$userFilterFirstNameOptions = [];
+$userFilterLastNameOptions = [];
+$userFilterEmailOptions = [];
+foreach ($allUsersForUserFilters as $userFilterRow) {
+    $optUsername = trim((string)($userFilterRow['pk_username'] ?? ''));
+    $optFirstName = trim((string)($userFilterRow['firstName'] ?? ''));
+    $optLastName = trim((string)($userFilterRow['lastName'] ?? ''));
+    $optEmail = trim((string)($userFilterRow['email'] ?? ''));
+
+    if ($optUsername !== '') {
+        $userFilterUsernameOptions[$optUsername] = true;
+    }
+    if ($optFirstName !== '') {
+        $userFilterFirstNameOptions[$optFirstName] = true;
+    }
+    if ($optLastName !== '') {
+        $userFilterLastNameOptions[$optLastName] = true;
+    }
+    if ($optEmail !== '') {
+        $userFilterEmailOptions[$optEmail] = true;
+    }
+}
+
+$userFilterUsernameOptions = array_keys($userFilterUsernameOptions);
+$userFilterFirstNameOptions = array_keys($userFilterFirstNameOptions);
+$userFilterLastNameOptions = array_keys($userFilterLastNameOptions);
+$userFilterEmailOptions = array_keys($userFilterEmailOptions);
+
+sort($userFilterUsernameOptions, SORT_NATURAL | SORT_FLAG_CASE);
+sort($userFilterFirstNameOptions, SORT_NATURAL | SORT_FLAG_CASE);
+sort($userFilterLastNameOptions, SORT_NATURAL | SORT_FLAG_CASE);
+sort($userFilterEmailOptions, SORT_NATURAL | SORT_FLAG_CASE);
+
+$adminUserFriendsByUsername = [];
+foreach ($users as $uRow) {
+    $userKey = (string)($uRow['pk_username'] ?? '');
+    if ($userKey === '') {
+        continue;
+    }
+
+    $friendsRows = getFriends($conn, $userKey);
+    $adminUserFriendsByUsername[$userKey] = array_map(static function (array $fRow): array {
+        $friendUsername = (string)($fRow['pk_username'] ?? '');
+        return [
+            'username' => $friendUsername,
+            'firstName' => (string)($fRow['firstName'] ?? ''),
+            'lastName' => (string)($fRow['lastName'] ?? ''),
+            'avatarUrl' => (string)(getAvatarUrl((string)($fRow['avatar'] ?? ''), $friendUsername) ?? ''),
+            'profileUrl' => buildAdminProfileUrl($friendUsername),
+        ];
+    }, $friendsRows);
+}
 
 $allUsernames = array_column($postTargetUsers, 'pk_username');
 $adminUsernames = array_column(array_values(array_filter($postTargetUsers, function ($u) {

@@ -666,6 +666,84 @@ $input.datetimepicker('show');
 });
 }
 
+function fitAdminUsersText() {
+var cells = document.querySelectorAll('#adminUsersTable td.admin-users-fit-cell');
+if (!cells.length) {
+return;
+}
+
+var measurer = document.getElementById('adminUsersTextMeasurer');
+if (!measurer) {
+measurer = document.createElement('span');
+measurer.id = 'adminUsersTextMeasurer';
+measurer.style.position = 'fixed';
+measurer.style.left = '-99999px';
+measurer.style.top = '-99999px';
+measurer.style.visibility = 'hidden';
+measurer.style.whiteSpace = 'nowrap';
+document.body.appendChild(measurer);
+}
+
+cells.forEach(function (cell) {
+var textEl = cell.querySelector('.js-admin-users-fit-text');
+var moreBtn = cell.querySelector('.js-admin-users-fit-more');
+if (!textEl || !moreBtn) {
+return;
+}
+
+var fullText = String(textEl.getAttribute('data-full-text') || '').trim();
+if (!fullText) {
+moreBtn.classList.add('d-none');
+textEl.textContent = '';
+return;
+}
+
+textEl.textContent = fullText;
+moreBtn.classList.add('d-none');
+
+var computed = window.getComputedStyle(textEl);
+measurer.style.font = computed.font;
+measurer.style.fontSize = computed.fontSize;
+measurer.style.fontFamily = computed.fontFamily;
+
+var cellWidth = cell.clientWidth || 0;
+if (cellWidth <= 0) {
+return;
+}
+
+var extraReserved = 0;
+var verifyIcon = cell.querySelector('.admin-users-verify-icon');
+if (verifyIcon) {
+extraReserved += Math.ceil(verifyIcon.getBoundingClientRect().width || 0) + 10;
+}
+
+var moreBtnWidth = Math.ceil(moreBtn.getBoundingClientRect().width || 18);
+var available = Math.max(10, cellWidth - moreBtnWidth - extraReserved - 12);
+
+measurer.textContent = fullText;
+if (measurer.getBoundingClientRect().width <= available) {
+return;
+}
+
+var low = 0;
+var high = fullText.length;
+while (low < high) {
+var mid = Math.ceil((low + high) / 2);
+var candidate = fullText.slice(0, mid) + '...';
+measurer.textContent = candidate;
+if (measurer.getBoundingClientRect().width <= available) {
+low = mid;
+} else {
+high = mid - 1;
+}
+}
+
+var cut = Math.max(1, low);
+textEl.textContent = fullText.slice(0, cut) + '...';
+moreBtn.classList.remove('d-none');
+});
+}
+
 function fitCollectionDescriptionText() {
 var rows = document.querySelectorAll('#adminCollectionsTable td.admin-col-description');
 if (!rows.length) {
@@ -769,6 +847,142 @@ scheduleSubmit(350);
 });
 }
 
+function initAdminUsersAutoFilter() {
+var form = document.getElementById('adminUsersFilterForm');
+if (!form || form.dataset.autoFilterInited === '1') {
+return;
+}
+form.dataset.autoFilterInited = '1';
+
+var submitTimer = null;
+function scheduleSubmit(delay) {
+window.clearTimeout(submitTimer);
+submitTimer = window.setTimeout(function () {
+form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+}, delay);
+}
+
+form.addEventListener('change', function (e) {
+var target = e.target;
+if (!target) {
+return;
+}
+
+if (target.matches('[data-role="search"]')) {
+return;
+}
+
+if (target.matches('input[name="users_created_from"], input[name="users_created_to"], input[type="checkbox"][name="users_id[]"], input[type="checkbox"][name="users_first_name[]"], input[type="checkbox"][name="users_last_name[]"], input[type="checkbox"][name="users_email[]"], input[type="checkbox"][name="users_role[]"]')) {
+scheduleSubmit(120);
+}
+});
+
+form.addEventListener('input', function (e) {
+var target = e.target;
+if (!target) {
+return;
+}
+
+if (target.matches('input[name="users_created_from"], input[name="users_created_to"]')) {
+scheduleSubmit(320);
+}
+});
+}
+
+function initAdminUsersDatePickers() {
+if (!window.jQuery || !jQuery.fn.datetimepicker) {
+return;
+}
+
+jQuery('#adminUsersFilterForm .js-admin-users-datetime').each(function () {
+var $input = jQuery(this);
+if ($input.data('dtp-initialized')) {
+return;
+}
+
+$input.datetimepicker({
+format: 'd.m.Y H:i',
+timepicker: true,
+step: 5,
+dayOfWeekStart: 1,
+scrollInput: false,
+closeOnDateSelect: false,
+onClose: function () {
+$input.trigger('change');
+}
+});
+
+$input.data('dtp-initialized', true);
+});
+
+jQuery('#adminUsersFilterForm .measurement-picker-icon').off('click.adminUsersDate').on('click.adminUsersDate', function () {
+var $icon = jQuery(this);
+var $input = $icon.siblings('input.js-admin-users-datetime').first();
+if (!$input.length) {
+$input = $icon.closest('.input-group').find('input.js-admin-users-datetime').first();
+}
+if ($input.length) {
+$input.trigger('focus');
+try {
+$input.datetimepicker('show');
+} catch (e) {
+// Focus fallback only.
+}
+}
+});
+}
+
+function openAdminUserFriendsModal(username, rawFriends) {
+var modalEl = document.getElementById('adminUserFriendsModal');
+var titleEl = document.getElementById('adminUserFriendsTitle');
+var bodyEl = document.getElementById('adminUserFriendsBody');
+if (!modalEl || !titleEl || !bodyEl) {
+return;
+}
+
+var friends = [];
+if (Array.isArray(rawFriends)) {
+friends = rawFriends;
+}
+
+titleEl.textContent = 'Friends: @' + String(username || '');
+if (!friends.length) {
+bodyEl.innerHTML = '<div class="text-muted small">No friends</div>';
+} else {
+bodyEl.innerHTML = '<div class="collection-card-shares admin-modal-user-grid">' + friends.map(function (u) {
+return buildMiniUserLink(u, 'admin-modal-mini');
+}).join('') + '</div>';
+}
+
+bootstrap.Modal.getOrCreateInstance(modalEl).show();
+}
+
+function initAdminUsersFullTextViewer() {
+if (document.body.dataset.adminUsersFullTextInited === '1') {
+return;
+}
+
+document.body.dataset.adminUsersFullTextInited = '1';
+
+document.addEventListener('click', function (e) {
+var trigger = e.target.closest('.js-admin-open-full-text');
+if (!trigger) {
+return;
+}
+
+var modalEl = document.getElementById('adminUsersFullTextModal');
+var titleEl = document.getElementById('adminUsersFullTextTitle');
+var bodyEl = document.getElementById('adminUsersFullTextBody');
+if (!modalEl || !titleEl || !bodyEl) {
+return;
+}
+
+titleEl.textContent = String(trigger.getAttribute('data-title') || 'Text');
+bodyEl.textContent = String(trigger.getAttribute('data-full-text') || '');
+bootstrap.Modal.getOrCreateInstance(modalEl).show();
+});
+}
+
 function initAdminMultiCombos() {
 document.querySelectorAll('[data-multi-combo]').forEach(function (combo) {
 if (combo.dataset.inited === '1') {
@@ -845,6 +1059,7 @@ new bootstrap.Modal(modalEl).show();
 }
 
 function onAdminTabContentUpdated(tab) {
+try {
 bindAudienceAndSearch('postAudience', 'postRecipientsWrap', 'postRecipientsSearch', '#postRecipientsList .group-member-item');
 bindAudienceAndSearch('editPostAudience', 'editPostRecipientsWrap', 'editPostRecipientsSearch', '#editPostRecipientsList .group-member-item');
 initAdminSlotDateTimeInputs();
@@ -852,7 +1067,11 @@ initAdminCollectionsDateTimePickers();
 hydrateSharedUsersCells();
 initAdminMultiCombos();
 initAdminCollectionsAutoFilter();
+initAdminUsersAutoFilter();
+initAdminUsersDatePickers();
+initAdminUsersFullTextViewer();
 fitCollectionDescriptionText();
+fitAdminUsersText();
 if (typeof window.enhancePaginationUI === 'function') {
 window.enhancePaginationUI(document.getElementById('adminTabContent'));
 }
@@ -873,6 +1092,9 @@ if (sharedUsersModalId > 0) {
 openCollectionSharedUsersModal(sharedUsersModalId, sharedUsersModalName);
 }
 }
+}
+} catch (err) {
+console.error(err);
 }
 }
 
@@ -910,6 +1132,10 @@ document.getElementById('editUserFn').value = u.firstName;
 document.getElementById('editUserLn').value = u.lastName;
 document.getElementById('editUserEmail').value = u.email;
 document.getElementById('editUserRole').value = u.role;
+var verifiedInput = document.getElementById('editUserIsEmailVerified');
+if (verifiedInput) {
+verifiedInput.checked = Number(u.isEmailVerified || 0) === 1;
+}
 new bootstrap.Modal(document.getElementById('editUserModal')).show();
 }
 
@@ -1119,6 +1345,19 @@ hiddenShare.value = shareUsername;
 }
 renderAdminShareFriendsList(Number((collectionIdEl && collectionIdEl.value) || 0), shareUsername);
 }
+
+var userFriendsBtn = e.target.closest('.js-admin-open-user-friends');
+if (userFriendsBtn) {
+var username = String(userFriendsBtn.getAttribute('data-username') || '').trim();
+var raw = String(userFriendsBtn.getAttribute('data-friends') || '[]');
+var friends = [];
+try {
+friends = JSON.parse(raw);
+} catch (err) {
+friends = [];
+}
+openAdminUserFriendsModal(username, friends);
+}
 });
 
 document.addEventListener('input', function (e) {
@@ -1143,11 +1382,12 @@ clearTimeout(resizeTimer);
 resizeTimer = setTimeout(function () {
 hydrateSharedUsersCells();
 fitCollectionDescriptionText();
+fitAdminUsersText();
 }, 140);
 });
 
 document.addEventListener('change', function (e) {
-var perPage = e.target.closest('#collectionsPerPage');
+var perPage = e.target.closest('#collectionsPerPage, #usersPerPage');
 if (!perPage) {
 return;
 }
