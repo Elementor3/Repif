@@ -939,6 +939,48 @@ scheduleSubmit(320);
 });
 }
 
+function initAdminPostsAutoFilter() {
+var form = document.getElementById('adminPostsFilterForm');
+if (!form || form.dataset.autoFilterInited === '1') {
+return;
+}
+form.dataset.autoFilterInited = '1';
+
+var submitTimer = null;
+function scheduleSubmit(delay) {
+window.clearTimeout(submitTimer);
+submitTimer = window.setTimeout(function () {
+form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+}, delay);
+}
+
+form.addEventListener('change', function (e) {
+var target = e.target;
+if (!target) {
+return;
+}
+
+if (target.matches('[data-role="search"]')) {
+return;
+}
+
+if (target.matches('input[name="posts_id"], input[name="posts_description"], input[name="posts_created_from"], input[name="posts_created_to"], input[type="checkbox"][name="posts_title[]"], input[type="checkbox"][name="posts_author[]"]')) {
+scheduleSubmit(140);
+}
+});
+
+form.addEventListener('input', function (e) {
+var target = e.target;
+if (!target) {
+return;
+}
+
+if (target.matches('input[name="posts_id"], input[name="posts_description"], input[name="posts_created_from"], input[name="posts_created_to"]')) {
+scheduleSubmit(320);
+}
+});
+}
+
 function initAdminUsersDatePickers() {
 if (!window.jQuery || !jQuery.fn.datetimepicker) {
 return;
@@ -970,6 +1012,49 @@ var $icon = jQuery(this);
 var $input = $icon.siblings('input.js-admin-users-datetime').first();
 if (!$input.length) {
 $input = $icon.closest('.input-group').find('input.js-admin-users-datetime').first();
+}
+if ($input.length) {
+$input.trigger('focus');
+try {
+$input.datetimepicker('show');
+} catch (e) {
+// Focus fallback only.
+}
+}
+});
+}
+
+function initAdminPostsDatePickers() {
+if (!window.jQuery || !jQuery.fn.datetimepicker) {
+return;
+}
+
+jQuery('#adminPostsFilterForm .js-admin-posts-datetime').each(function () {
+var $input = jQuery(this);
+if ($input.data('dtp-initialized')) {
+return;
+}
+
+$input.datetimepicker({
+format: 'd.m.Y H:i',
+timepicker: true,
+step: 5,
+dayOfWeekStart: 1,
+scrollInput: false,
+closeOnDateSelect: false,
+onClose: function () {
+$input.trigger('change');
+}
+});
+
+$input.data('dtp-initialized', true);
+});
+
+jQuery('#adminPostsFilterForm .measurement-picker-icon').off('click.adminPostsDate').on('click.adminPostsDate', function () {
+var $icon = jQuery(this);
+var $input = $icon.siblings('input.js-admin-posts-datetime').first();
+if (!$input.length) {
+$input = $icon.closest('.input-group').find('input.js-admin-posts-datetime').first();
 }
 if ($input.length) {
 $input.trigger('focus');
@@ -1467,8 +1552,10 @@ initAdminSingleCombos();
 initAdminCollectionsAutoFilter();
 initAdminUsersAutoFilter();
 initAdminStationsAutoFilter();
+initAdminPostsAutoFilter();
 initAdminUsersDatePickers();
 initAdminStationsDatePickers();
+initAdminPostsDatePickers();
 initAdminUsersFullTextViewer();
 fitCollectionDescriptionText();
 fitAdminUsersText();
@@ -1532,6 +1619,15 @@ if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA'
 return;
 }
 
+var measurementsChartsPane = document.getElementById('measurementsChartsPane');
+if (measurementsChartsPane && measurementsChartsPane.classList.contains('active') && measurementsChartsPane.classList.contains('show')) {
+return;
+}
+
+if (getCurrentTabFromUrl() === 'measurements') {
+return;
+}
+
 adminLiveRefreshBusy = true;
 loadTabByUrl(window.location.href, false).then(function () {
 adminLiveRefreshBusy = false;
@@ -1584,7 +1680,18 @@ cb.checked = recipients.indexOf(cb.value) !== -1;
 });
 
 syncRecipientsVisibilityByIds('editPostAudience', 'editPostRecipientsWrap');
-new bootstrap.Modal(document.getElementById('editPostModal')).show();
+var modalEl = document.getElementById('editPostModal');
+var modalBody = modalEl ? modalEl.querySelector('.modal-body') : null;
+if (modalBody) {
+modalBody.scrollTop = 0;
+}
+new bootstrap.Modal(modalEl).show();
+window.setTimeout(function () {
+var titleInput = document.getElementById('editPostTitle');
+if (titleInput) {
+titleInput.focus();
+}
+}, 30);
 }
 
 function editAdminCollection(c) {
@@ -1722,6 +1829,10 @@ return;
 }
 
 if (form.matches('#measurementFiltersForm')) {
+return;
+}
+
+if (form.matches('#editMeasurementForm')) {
 return;
 }
 

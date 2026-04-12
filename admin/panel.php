@@ -389,6 +389,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $userPage = (int)($_GET['user_page'] ?? 1);
 $stationPage = (int)($_GET['station_page'] ?? 1);
 $postPage = (int)($_GET['post_page'] ?? 1);
+$postsPerPage = (int)($_GET['posts_per_page'] ?? 20);
 $usersPerPage = (int)($_GET['users_per_page'] ?? 20);
 $stationsPerPage = (int)($_GET['stations_per_page'] ?? 20);
 if (!in_array($usersPerPage, [10, 20, 50, 100], true)) {
@@ -397,34 +398,99 @@ if (!in_array($usersPerPage, [10, 20, 50, 100], true)) {
 if (!in_array($stationsPerPage, [10, 20, 50, 100], true)) {
     $stationsPerPage = 20;
 }
+if (!in_array($postsPerPage, [10, 20, 50, 100], true)) {
+    $postsPerPage = 20;
+}
 
 $adminUserFilters = normalizeAdminUserFilters($_GET);
 $adminStationFilters = adminNormalizeStationFilters($_GET);
 
+$postAuthorInput = $_GET['posts_author'] ?? [];
+if (!is_array($postAuthorInput)) {
+    $postAuthorInput = $postAuthorInput !== '' ? [(string)$postAuthorInput] : [];
+}
+$postTitleInput = $_GET['posts_title'] ?? [];
+if (!is_array($postTitleInput)) {
+    $postTitleInput = $postTitleInput !== '' ? [(string)$postTitleInput] : [];
+}
+$postIdInput = (int)($_GET['posts_id'] ?? 0);
+$postsCreatedFromInput = trim((string)($_GET['posts_created_from'] ?? ''));
+$postsCreatedToInput = trim((string)($_GET['posts_created_to'] ?? ''));
+$adminPostFilters = [
+    'id' => $postIdInput > 0 ? $postIdInput : 0,
+    'titles' => array_values(array_filter(array_map(static fn($v) => trim((string)$v), $postTitleInput), static fn($v) => $v !== '')),
+    'description' => trim((string)($_GET['posts_description'] ?? '')),
+    'authors' => array_values(array_filter(array_map(static fn($v) => trim((string)$v), $postAuthorInput), static fn($v) => $v !== '')),
+    'created_from' => normalizeAdminMeasurementDateTimeInput($postsCreatedFromInput, false),
+    'created_to' => normalizeAdminMeasurementDateTimeInput($postsCreatedToInput, true),
+];
+$postTitleOptions = getPostTitlesForFilters($conn);
+$postTitleAllowed = array_fill_keys($postTitleOptions, true);
+$adminPostFilters['titles'] = array_values(array_filter($adminPostFilters['titles'], static fn($v): bool => isset($postTitleAllowed[(string)$v])));
+$postAuthorOptions = getPostAuthorsForFilters($conn);
+$postAuthorAllowed = array_fill_keys(array_map(static fn($r) => (string)($r['pk_username'] ?? ''), $postAuthorOptions), true);
+$adminPostFilters['authors'] = array_values(array_filter($adminPostFilters['authors'], static fn($v): bool => isset($postAuthorAllowed[(string)$v])));
+
+$measurementStationInput = $_GET['station'] ?? [];
+if (!is_array($measurementStationInput)) {
+    $measurementStationInput = $measurementStationInput !== '' ? [(string)$measurementStationInput] : [];
+}
+$measurementCollectionInput = $_GET['collection'] ?? [];
+if (!is_array($measurementCollectionInput)) {
+    $measurementCollectionInput = $measurementCollectionInput !== '' ? [(string)$measurementCollectionInput] : [];
+}
+$measurementOwnerInput = $_GET['owner_id'] ?? [];
+if (!is_array($measurementOwnerInput)) {
+    $measurementOwnerInput = $measurementOwnerInput !== '' ? [(string)$measurementOwnerInput] : [];
+}
+$measurementIdInput = (int)($_GET['measurement_id'] ?? 0);
+
 $adminMeasurementFilters = [
-    'station' => $_GET['station'] ?? '',
-    'collection' => $_GET['collection'] ?? '',
+    'measurement_id' => $measurementIdInput > 0 ? $measurementIdInput : 0,
+    'station' => array_values(array_filter(array_map(static fn($v) => trim((string)$v), $measurementStationInput), static fn($v) => $v !== '')),
+    'collection' => array_values(array_filter(array_map('intval', $measurementCollectionInput), static fn($v) => $v > 0)),
     'date_from' => $_GET['date_from'] ?? '',
     'date_to' => $_GET['date_to'] ?? '',
-    'owner_id' => trim((string)($_GET['owner_id'] ?? '')),
+    'owner_id' => array_values(array_filter(array_map(static fn($v) => trim((string)$v), $measurementOwnerInput), static fn($v) => $v !== '')),
 ];
 $adminMeasurementFilters['date_from'] = normalizeAdminMeasurementDateTimeInput((string)$adminMeasurementFilters['date_from'], false);
 $adminMeasurementFilters['date_to'] = normalizeAdminMeasurementDateTimeInput((string)$adminMeasurementFilters['date_to'], true);
 
 $allStationsForFilters = getAllStationsForAdminFilters($conn);
 $allStationSerials = array_column($allStationsForFilters, 'pk_serialNumber');
-if ($adminMeasurementFilters['station'] !== '' && !in_array($adminMeasurementFilters['station'], $allStationSerials, true)) {
-    $adminMeasurementFilters['station'] = '';
-}
+$allowedStationSet = array_fill_keys(array_map('strval', $allStationSerials), true);
+$adminMeasurementFilters['station'] = array_values(array_filter((array)$adminMeasurementFilters['station'], static fn($v): bool => isset($allowedStationSet[(string)$v])));
+
+$measurementOwnerRows = $conn->query(
+    "SELECT DISTINCT m.fk_ownerId AS pk_username,
+            u.firstName,
+            u.lastName,
+            u.avatar
+     FROM measurement m
+     LEFT JOIN user u ON u.pk_username = m.fk_ownerId
+     WHERE m.fk_ownerId IS NOT NULL AND m.fk_ownerId <> ''
+     ORDER BY m.fk_ownerId ASC"
+)->fetch_all(MYSQLI_ASSOC);
+$measurementOwnerOptions = array_values(array_filter(array_map(static function (array $row): array {
+    $usernameValue = trim((string)($row['pk_username'] ?? ''));
+    if ($usernameValue === '') {
+        return [];
+    }
+    return [
+        'value' => $usernameValue,
+        'username' => $usernameValue,
+        'firstName' => (string)($row['firstName'] ?? ''),
+        'lastName' => (string)($row['lastName'] ?? ''),
+        'avatar' => (string)($row['avatar'] ?? ''),
+    ];
+}, $measurementOwnerRows)));
+$measurementOwnerAllowed = array_fill_keys(array_column($measurementOwnerOptions, 'value'), true);
+$adminMeasurementFilters['owner_id'] = array_values(array_filter((array)$adminMeasurementFilters['owner_id'], static fn($v): bool => isset($measurementOwnerAllowed[(string)$v])));
 
 $allCollectionsForAdmin = getAllCollectionsForAdmin($conn);
 $allCollectionIds = array_map(static fn($r) => (int)($r['pk_collectionID'] ?? 0), $allCollectionsForAdmin);
-if ($adminMeasurementFilters['collection'] !== '') {
-    $adminMeasurementFilters['collection'] = (int)$adminMeasurementFilters['collection'];
-    if ($adminMeasurementFilters['collection'] <= 0 || !in_array($adminMeasurementFilters['collection'], $allCollectionIds, true)) {
-        $adminMeasurementFilters['collection'] = '';
-    }
-}
+$allowedCollectionSet = array_fill_keys(array_map('intval', $allCollectionIds), true);
+$adminMeasurementFilters['collection'] = array_values(array_filter((array)$adminMeasurementFilters['collection'], static fn($v): bool => isset($allowedCollectionSet[(int)$v])));
 
 $allSlotsForAdmin = getAllSlotsForAdminCollections($conn);
 $slotsByCollection = [];
@@ -785,7 +851,10 @@ foreach ($stations as $stationRow) {
         ];
     }, $historyRows);
 }
-$posts = getPosts($conn, $postPage, $perPage);
+$totalPosts = countPostsFiltered($conn, $adminPostFilters);
+$postTotalPages = max(1, (int)ceil($totalPosts / $postsPerPage));
+$postPage = max(1, min($postPage, $postTotalPages));
+$posts = getPostsFiltered($conn, $postPage, $postsPerPage, $adminPostFilters);
 $postTargetUsers = $conn->query("SELECT pk_username, firstName, lastName, role FROM user ORDER BY firstName ASC, lastName ASC, pk_username ASC")->fetch_all(MYSQLI_ASSOC);
 $allUsersForUserFilters = $conn->query("SELECT pk_username, firstName, lastName, email FROM user ORDER BY pk_username ASC")->fetch_all(MYSQLI_ASSOC);
 

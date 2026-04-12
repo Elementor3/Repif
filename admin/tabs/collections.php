@@ -160,7 +160,7 @@ $formatUserOptionLabel = static function (array $user): string {
 <div class="alert alert-secondary py-2 px-3 small d-sm-none" id="collectionsScrollHint" role="status">
     <i class="bi bi-arrow-left-right me-1"></i><?= t('table_horizontal_scroll_hint') ?>
 </div>
-<div class="table-responsive" id="adminCollectionsTableWrap">
+<div class="table-responsive admin-collections-table-wrap" id="adminCollectionsTableWrap">
     <table class="table table-sm table-hover align-middle text-center text-nowrap table-striped" id="adminCollectionsTable">
         <thead>
             <tr>

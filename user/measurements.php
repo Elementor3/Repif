@@ -67,9 +67,18 @@ function normalizeMeasurementDateTimeInput(string $value, bool $isEnd): string {
 }
 
 // Filters
+$stationFilterInput = $_GET['station'] ?? [];
+if (!is_array($stationFilterInput)) {
+    $stationFilterInput = $stationFilterInput !== '' ? [(string)$stationFilterInput] : [];
+}
+$collectionFilterInput = $_GET['collection'] ?? [];
+if (!is_array($collectionFilterInput)) {
+    $collectionFilterInput = $collectionFilterInput !== '' ? [(string)$collectionFilterInput] : [];
+}
+
 $filters = [
-    'station' => $_GET['station'] ?? '',
-    'collection' => $_GET['collection'] ?? '',
+    'station' => array_values(array_filter(array_map(static fn($v) => trim((string)$v), $stationFilterInput), static fn($v) => $v !== '')),
+    'collection' => array_values(array_filter(array_map('intval', $collectionFilterInput), static fn($v) => $v > 0)),
     'date_from' => $_GET['date_from'] ?? '',
     'date_to' => $_GET['date_to'] ?? '',
 ];
@@ -84,30 +93,27 @@ if ($returnToRaw !== '' && strpos($returnToRaw, '/user/') === 0) {
     $returnTo = $returnToRaw;
 }
 
-// Only allow stations owned by user
-if ($filters['station'] && !in_array($filters['station'], $stationSerials, true)) {
-    $filters['station'] = '';
-    $normalizedFilters['station'] = '';
-}
+// Only allow stations/collections available to current user context
+$allowedStationsSet = array_fill_keys(array_map('strval', $stationSerials), true);
+$filters['station'] = array_values(array_filter($filters['station'], static fn($v): bool => isset($allowedStationsSet[(string)$v])));
 
-if ($filters['collection'] !== '') {
-    $filters['collection'] = (int)$filters['collection'];
-    if ($filters['collection'] <= 0 || !in_array($filters['collection'], $myCollectionIds, true)) {
-        $filters['collection'] = '';
-        $normalizedFilters['collection'] = '';
-    }
-}
+$allowedCollectionsSet = array_fill_keys(array_map('intval', $myCollectionIds), true);
+$filters['collection'] = array_values(array_filter($filters['collection'], static fn($v): bool => isset($allowedCollectionsSet[(int)$v])));
 
 $normalizedFilters['station'] = $filters['station'];
 $normalizedFilters['collection'] = $filters['collection'];
 $ownerFilter = $isAdminAll ? '' : $username;
 if (!$isAdminAll && !empty($filters['collection'])) {
+    $selectedCollectionsSet = array_fill_keys(array_map('intval', $filters['collection']), true);
     foreach ($myCollections as $collectionRow) {
-        if ((int)($collectionRow['pk_collectionID'] ?? 0) === (int)$filters['collection']) {
-            $collectionOwner = (string)($collectionRow['fk_user'] ?? '');
-            if ($collectionOwner !== '' && $collectionOwner !== $username) {
-                $ownerFilter = '';
-            }
+        $cid = (int)($collectionRow['pk_collectionID'] ?? 0);
+        if ($cid <= 0 || !isset($selectedCollectionsSet[$cid])) {
+            continue;
+        }
+
+        $collectionOwner = (string)($collectionRow['fk_user'] ?? '');
+        if ($collectionOwner !== '' && $collectionOwner !== $username) {
+            $ownerFilter = '';
             break;
         }
     }
@@ -198,9 +204,23 @@ function formatDateForFilename(string $value): string {
 function buildMeasurementsCsvFilename(array $filters, array $stations, array $collections): string {
     $parts = ['measurements'];
 
-    if (!empty($filters['collection'])) {
+    $selectedCollection = '';
+    if (!empty($filters['collection']) && is_array($filters['collection'])) {
+        $selectedCollection = (string)(reset($filters['collection']) ?: '');
+    } elseif (!empty($filters['collection'])) {
+        $selectedCollection = (string)$filters['collection'];
+    }
+
+    $selectedStation = '';
+    if (!empty($filters['station']) && is_array($filters['station'])) {
+        $selectedStation = (string)(reset($filters['station']) ?: '');
+    } elseif (!empty($filters['station'])) {
+        $selectedStation = (string)$filters['station'];
+    }
+
+    if ($selectedCollection !== '') {
         foreach ($collections as $collection) {
-            if ((string)($collection['pk_collectionID'] ?? '') === (string)$filters['collection']) {
+            if ((string)($collection['pk_collectionID'] ?? '') === $selectedCollection) {
                 $collectionName = trim((string)($collection['name'] ?? ''));
                 if ($collectionName === '') {
                     $collectionName = (string)($collection['pk_collectionID'] ?? '');
@@ -211,9 +231,9 @@ function buildMeasurementsCsvFilename(array $filters, array $stations, array $co
         }
     }
 
-    if (!empty($filters['station'])) {
+    if ($selectedStation !== '') {
         foreach ($stations as $station) {
-            if ((string)($station['pk_serialNumber'] ?? '') === (string)$filters['station']) {
+            if ((string)($station['pk_serialNumber'] ?? '') === $selectedStation) {
                 $stationName = trim((string)($station['name'] ?? ''));
                 if ($stationName === '') {
                     $stationName = (string)($station['pk_serialNumber'] ?? '');
@@ -284,26 +304,6 @@ foreach ($myStations as $station) {
 
 $collectionStationsMap = getCollectionStationsMapForMeasurements($conn, $myCollectionIds, array_column($stationOptions, 'value'));
 
-$selectedCollectionLabel = '';
-if ($filters['collection'] !== '') {
-    foreach ($collectionOptions as $option) {
-        if ((string)$option['value'] === (string)$filters['collection']) {
-            $selectedCollectionLabel = (string)$option['label'];
-            break;
-        }
-    }
-}
-
-$selectedStationLabel = '';
-if ($filters['station'] !== '') {
-    foreach ($stationOptions as $option) {
-        if ((string)$option['value'] === (string)$filters['station']) {
-            $selectedStationLabel = (string)$option['label'];
-            break;
-        }
-    }
-}
-
 $page = max(1, (int)($_GET['page'] ?? 1));
 $perPage = (int)($_GET['per_page'] ?? 20);
 if (!in_array($perPage, [10, 20, 50, 100])) $perPage = 20;
@@ -329,70 +329,72 @@ $paginationInfo = str_replace(['{from}', '{to}', '{total}'], [$total > 0 ? $from
 <!-- Filter Card -->
 <div class="card filter-card mb-4">
     <div class="card-body">
-        <form method="get" class="row g-2 align-items-end" id="measurementFiltersForm">
+        <form method="get" class="admin-users-filters" id="measurementFiltersForm">
             <?php if ($isAdminAll): ?>
             <input type="hidden" name="admin_all" value="1">
             <?php endif; ?>
-            <div class="col-12 col-lg-auto">
-                <label class="form-label"><?= t('collection') ?></label>
-                <div class="position-relative">
-                    <div class="input-group input-group-sm">
-                        <input
-                            type="text"
-                            id="measurementCollectionInput"
-                            class="form-control form-control-sm"
-                            placeholder="<?= e(t('collection')) ?>..."
-                            autocomplete="off"
-                            value="<?= e($selectedCollectionLabel) ?>"
-                        >
-                        <button type="button" class="btn btn-outline-secondary" id="measurementCollectionToggleBtn" aria-label="<?= e(t('collection')) ?>">
+            <div class="row g-2 align-items-end mb-2">
+                <div class="col-12 col-md-4 col-lg-3">
+                    <label class="form-label mb-1"><?= t('collection') ?></label>
+                    <div class="admin-multicombo" data-multi-combo>
+                        <button type="button" class="btn btn-outline-secondary btn-sm text-start w-100 d-flex justify-content-between align-items-center" data-role="toggle">
+                            <span data-role="summary" data-base-label="<?= e(t('collection')) ?>"><?= e(t('collection')) ?>: <?= empty($filters['collection']) ? e(t('any')) : count((array)$filters['collection']) ?></span>
                             <i class="bi bi-chevron-down"></i>
                         </button>
-                    </div>
-                    <input type="hidden" name="collection" id="measurementCollectionValue" value="<?= e((string)$filters['collection']) ?>">
-                    <div id="measurementCollectionComboPanel" class="position-absolute w-100 border rounded bg-body shadow-sm d-none" style="z-index: 20;">
-                        <div id="measurementCollectionViewport" style="max-height: 220px; overflow-y: auto; position: relative;"></div>
+                        <div class="admin-multicombo-panel d-none" data-role="panel">
+                            <input type="text" class="form-control form-control-sm mb-2" placeholder="<?= e(t('search')) ?>..." data-role="search">
+                            <div class="admin-multicombo-options" data-role="options">
+                                <?php foreach ($collectionOptions as $option): ?>
+                                    <?php $colVal = (string)($option['value'] ?? ''); if ($colVal === '') { continue; } ?>
+                                    <?php $colLabel = (string)($option['label'] ?? $colVal); ?>
+                                    <label class="admin-multicombo-option" data-label="<?= e(strtolower($colLabel . ' ' . $colVal)) ?>">
+                                        <input type="checkbox" name="collection[]" value="<?= e($colVal) ?>" <?= in_array((int)$colVal, (array)$filters['collection'], true) ? 'checked' : '' ?>>
+                                        <span><?= e($colLabel) ?></span>
+                                    </label>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
                     </div>
                 </div>
-            </div>
-            <div class="col-12 col-sm-6 col-lg-auto">
-                <label class="form-label"><?= t('station') ?></label>
-                <div class="position-relative">
-                    <div class="input-group input-group-sm">
-                        <input
-                            type="text"
-                            id="measurementStationInput"
-                            class="form-control form-control-sm"
-                            placeholder="<?= e(t('station')) ?>..."
-                            autocomplete="off"
-                            value="<?= e($selectedStationLabel) ?>"
-                        >
-                        <button type="button" class="btn btn-outline-secondary" id="measurementStationToggleBtn" aria-label="<?= e(t('station')) ?>">
+                <div class="col-12 col-md-4 col-lg-3">
+                    <label class="form-label mb-1"><?= t('station') ?></label>
+                    <div class="admin-multicombo" data-multi-combo>
+                        <button type="button" class="btn btn-outline-secondary btn-sm text-start w-100 d-flex justify-content-between align-items-center" data-role="toggle">
+                            <span data-role="summary" data-base-label="<?= e(t('station')) ?>"><?= e(t('station')) ?>: <?= empty($filters['station']) ? e(t('any')) : count((array)$filters['station']) ?></span>
                             <i class="bi bi-chevron-down"></i>
                         </button>
+                        <div class="admin-multicombo-panel d-none" data-role="panel">
+                            <input type="text" class="form-control form-control-sm mb-2" placeholder="<?= e(t('search')) ?>..." data-role="search">
+                            <div class="admin-multicombo-options" data-role="options">
+                                <?php foreach ($stationOptions as $option): ?>
+                                    <?php $stVal = (string)($option['value'] ?? ''); if ($stVal === '') { continue; } ?>
+                                    <?php $stLabel = (string)($option['label'] ?? $stVal); ?>
+                                    <label class="admin-multicombo-option" data-label="<?= e(strtolower($stLabel . ' ' . $stVal)) ?>">
+                                        <input type="checkbox" name="station[]" value="<?= e($stVal) ?>" <?= in_array($stVal, (array)$filters['station'], true) ? 'checked' : '' ?>>
+                                        <span><?= e($stLabel) ?></span>
+                                    </label>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
                     </div>
-                    <input type="hidden" name="station" id="measurementStationValue" value="<?= e((string)$filters['station']) ?>">
-                    <div id="measurementStationComboPanel" class="position-absolute w-100 border rounded bg-body shadow-sm d-none" style="z-index: 20;">
-                        <div id="measurementStationViewport" style="max-height: 220px; overflow-y: auto; position: relative;"></div>
+                </div>
+                <div class="col-12 col-sm-6 col-md-4 col-lg-2">
+                    <label class="form-label mb-1"><?= t('created_from_label') ?></label>
+                    <div class="input-group input-group-sm">
+                        <input type="text" name="date_from" class="form-control form-control-sm js-measurement-datetime" value="<?= e((string)$filters['date_from']) ?>" autocomplete="off" placeholder="DD.MM.YYYY HH:mm">
+                        <span class="input-group-text slot-picker-icon measurement-picker-icon" aria-hidden="true"><i class="bi bi-calendar-event"></i></span>
                     </div>
                 </div>
-            </div>
-            <div class="col-12 col-sm-6 col-lg-auto">
-                <label class="form-label"><?= t('start_datetime_pipe') ?></label>
-                <div class="input-group input-group-sm">
-                    <input type="text" name="date_from" class="form-control form-control-sm js-measurement-datetime" value="<?= e($filters['date_from']) ?>" autocomplete="off" placeholder="DD.MM.YYYY HH:mm">
-                    <span class="input-group-text slot-picker-icon measurement-picker-icon" aria-hidden="true"><i class="bi bi-calendar-event"></i></span>
+                <div class="col-12 col-sm-6 col-md-4 col-lg-2">
+                    <label class="form-label mb-1"><?= t('created_until_label') ?></label>
+                    <div class="input-group input-group-sm">
+                        <input type="text" name="date_to" class="form-control form-control-sm js-measurement-datetime" value="<?= e((string)$filters['date_to']) ?>" autocomplete="off" placeholder="DD.MM.YYYY HH:mm">
+                        <span class="input-group-text slot-picker-icon measurement-picker-icon" aria-hidden="true"><i class="bi bi-calendar-event"></i></span>
+                    </div>
                 </div>
-            </div>
-            <div class="col-12 col-sm-6 col-lg-auto">
-                <label class="form-label"><?= t('end_datetime_pipe') ?></label>
-                <div class="input-group input-group-sm">
-                    <input type="text" name="date_to" class="form-control form-control-sm js-measurement-datetime" value="<?= e($filters['date_to']) ?>" autocomplete="off" placeholder="DD.MM.YYYY HH:mm">
-                    <span class="input-group-text slot-picker-icon measurement-picker-icon" aria-hidden="true"><i class="bi bi-calendar-event"></i></span>
+                <div class="col-12 col-md-4 col-lg-2 d-flex gap-1">
+                    <button type="button" id="clearMeasurementFiltersBtn" class="btn btn-outline-secondary btn-sm w-100"><?= t('clear') ?></button>
                 </div>
-            </div>
-            <div class="col-12 col-lg-auto d-flex gap-1">
-                <button type="button" id="clearMeasurementFiltersBtn" class="btn btn-outline-secondary btn-sm"><?= t('clear') ?></button>
             </div>
         </form>
     </div>
