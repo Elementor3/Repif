@@ -1,9 +1,0 @@
-@media (max-width: 576px) {
-	#measurementMetricChartBody {
-		height: 440px !important;
-	}
-}
-
-.measurement-picker-icon {
-	cursor: pointer;
-}
