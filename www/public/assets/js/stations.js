@@ -207,6 +207,12 @@
 			descEl.textContent = (desc || '').trim() !== '' ? desc : '-';
 		}
 
+		var editBtn = card.querySelector('.js-edit-station');
+		if (editBtn) {
+			editBtn.setAttribute('data-name', String(name || ''));
+			editBtn.setAttribute('data-description', String(desc || ''));
+		}
+
 		if ((scope || 'active') === 'active') {
 			var col = card.closest('.col-12');
 			if (col) {

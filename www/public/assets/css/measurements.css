@@ -7,3 +7,39 @@
 .measurement-picker-icon {
 	cursor: pointer;
 }
+
+/* Multi-combo styles (copied subset from admin_panel.css) */
+.admin-multicombo {
+	position: relative;
+}
+
+.admin-multicombo-panel {
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: calc(100% + 0.25rem);
+	z-index: 1080;
+	background: var(--bs-body-bg);
+	border: 1px solid var(--bs-border-color);
+	border-radius: 0.5rem;
+	padding: 0.45rem;
+	box-shadow: 0 0.45rem 1rem rgba(0, 0, 0, 0.1);
+}
+
+.admin-multicombo-options {
+	max-height: 180px;
+	overflow: auto;
+	display: grid;
+	gap: 0.25rem;
+}
+
+.admin-multicombo-option {
+	padding: 0.2rem 0.25rem;
+	border-radius: 0.35rem;
+	font-size: 0.82rem;
+	cursor: pointer;
+}
+
+.admin-multicombo-option:hover {
+	background: var(--bs-tertiary-bg);
+}

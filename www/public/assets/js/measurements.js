@@ -29,6 +29,7 @@ function initMeasurementsClient() {
     var perPage = Number(config.perPage || 20);
     var pollTimer = null;
     var chartPollTimer = null;
+    var LIVE_POLL_INTERVAL_MS = 2000;
     var chartInstance = null;
     var selectedChartMetric = 'temperature';
     var paginationTemplate = String(config.paginationTemplate || 'Showing {from} to {to} of {total}');
@@ -464,6 +465,76 @@ function initMeasurementsClient() {
         }
     }
 
+    function initMeasurementMultiCombos() {
+        document.querySelectorAll('[data-multi-combo]').forEach(function (combo) {
+            if (combo.dataset.inited === '1') {
+                return;
+            }
+            combo.dataset.inited = '1';
+
+            var toggle = combo.querySelector('[data-role="toggle"]');
+            var summary = combo.querySelector('[data-role="summary"]');
+            var panel = combo.querySelector('[data-role="panel"]');
+            var search = combo.querySelector('[data-role="search"]');
+            var optionsWrap = combo.querySelector('[data-role="options"]');
+            if (!toggle || !summary || !panel || !optionsWrap) {
+                return;
+            }
+
+            var initialSummary = String(summary.textContent || '').trim();
+            var defaultAnyText = initialSummary.indexOf(':') >= 0
+                ? initialSummary.split(':').slice(1).join(':').trim()
+                : 'any';
+
+            function updateSummary() {
+                var checks = combo.querySelectorAll('input[type="checkbox"]');
+                var checked = combo.querySelectorAll('input[type="checkbox"]:checked');
+                var baseLabel = String(summary.getAttribute('data-base-label') || '').trim();
+                var anyText = String(summary.getAttribute('data-any-label') || defaultAnyText || 'any').trim();
+                if (!baseLabel) {
+                    baseLabel = 'Filter';
+                }
+
+                if (checked.length === 0 || (checks.length > 0 && checked.length === checks.length)) {
+                    summary.textContent = baseLabel + ': ' + anyText;
+                    return;
+                }
+
+                summary.textContent = baseLabel + ': ' + String(checked.length);
+            }
+
+            toggle.addEventListener('click', function (e) {
+                e.preventDefault();
+                panel.classList.toggle('d-none');
+                if (!panel.classList.contains('d-none') && search) {
+                    search.focus();
+                }
+            });
+
+            if (search) {
+                search.addEventListener('input', function () {
+                    var q = String(search.value || '').trim().toLowerCase();
+                    optionsWrap.querySelectorAll('.admin-multicombo-option').forEach(function (opt) {
+                        var label = String(opt.getAttribute('data-label') || '').toLowerCase();
+                        opt.classList.toggle('d-none', q !== '' && label.indexOf(q) === -1);
+                    });
+                });
+            }
+
+            combo.addEventListener('change', function () {
+                updateSummary();
+            });
+
+            document.addEventListener('click', function (e) {
+                if (!combo.contains(e.target)) {
+                    panel.classList.add('d-none');
+                }
+            });
+
+            updateSummary();
+        });
+    }
+
     function saveMeasurementFiltersState() {
         var form = document.getElementById('measurementFiltersForm');
         if (!form || !window.sessionStorage) {
@@ -808,8 +879,13 @@ function initMeasurementsClient() {
 
         var ownerCell = '<span class="text-muted">-</span>';
         if (row.fk_ownerId) {
+            var ownerAvatarUrl = String(row.owner_avatar_url || '').trim();
+            var ownerAvatarHtml = '<span class="collection-share-avatar"' + (ownerAvatarUrl ? ' style="display:none;"' : '') + '><i class="bi bi-person-circle"></i></span>';
+            if (ownerAvatarUrl) {
+                ownerAvatarHtml = '<img src="' + escapeHtml(ownerAvatarUrl) + '" class="collection-share-avatar" alt="avatar" onerror="this.style.display=\'none\';if(this.nextElementSibling){this.nextElementSibling.style.display=\'inline-flex\';}">' + ownerAvatarHtml;
+            }
             ownerCell = '<div class="collection-card-shares justify-content-center"><a class="collection-share-item admin-shared-mini" href="/user/view_profile.php?user=' + encodeURIComponent(String(row.fk_ownerId)) + '&admin_view=1" title="' + ownerName + '">' +
-                '<span class="collection-share-avatar"><i class="bi bi-person-circle"></i></span>' +
+                ownerAvatarHtml +
                 '<span class="collection-share-username">@' + ownerId + '</span></a></div>';
         }
 
@@ -1899,6 +1975,7 @@ function initMeasurementsClient() {
 
     initMeasurementDateTimePickers();
     var restoredMeasurementFilters = restoreMeasurementFiltersStateIfNeeded();
+    initMeasurementMultiCombos();
     initMeasurementComboFilters();
 
     document.getElementById('measurementFiltersForm').addEventListener('submit', function (e) {
@@ -1946,6 +2023,9 @@ function initMeasurementsClient() {
 
             form.querySelectorAll('input[type="checkbox"][name="station[]"], input[type="checkbox"][name="collection[]"], input[type="checkbox"][name="owner_id[]"]').forEach(function (cb) {
                 cb.checked = false;
+            });
+            form.querySelectorAll('[data-multi-combo]').forEach(function (combo) {
+                combo.dispatchEvent(new Event('change', { bubbles: true }));
             });
 
             if (measurementIdField) {
@@ -2215,12 +2295,13 @@ function initMeasurementsClient() {
         ensureChartInstance();
         loadChartData(true);
     }
-    pollTimer = setInterval(pollMeasurements, 10000);
+    pollTimer = setInterval(pollMeasurements, LIVE_POLL_INTERVAL_MS);
     chartPollTimer = setInterval(function () {
         if (isChartsTabActive()) {
             loadChartData(true);
         }
-    }, 10000);
+    }, LIVE_POLL_INTERVAL_MS);
+    pollMeasurements();
 
     var chartsTabBtn = document.getElementById('measurements-charts-tab');
     if (chartsTabBtn) {

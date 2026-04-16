@@ -138,6 +138,12 @@ if ($action === 'chart' || $action === 'poll') {
     $page = min($page, $totalPages);
 
     $rows = getMeasurements($conn, $filters, $page, $perPage);
+    foreach ($rows as &$row) {
+        $ownerUsername = trim((string)($row['fk_ownerId'] ?? ''));
+        $ownerAvatar = (string)($row['owner_avatar'] ?? '');
+        $row['owner_avatar_url'] = $ownerUsername !== '' ? getAvatarUrl($ownerAvatar, $ownerUsername) : null;
+    }
+    unset($row);
 
     $includeChart = isset($_GET['include_chart']) && (string)$_GET['include_chart'] === '1';
     $chart = [];
