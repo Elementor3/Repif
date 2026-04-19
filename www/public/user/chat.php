@@ -324,22 +324,33 @@ $renderSystemText = function (array $message): string {
                             </div>
                         <?php endif; ?>
                         <div class="bubble">
-                            <?php if ($m['file_path']): ?>
-                                <?php
-                                $viewUrl     = '/download_chat_file.php?id=' . (int)$m['pk_messageID'] . '&mode=view';
-                                $downloadUrl = '/download_chat_file.php?id=' . (int)$m['pk_messageID'] . '&mode=download';
-                                $fileName    = $m['file_name'] ?: basename($m['file_path']);
-                                ?>
-                                <div class="d-flex align-items-center justify-content-between">
-                                    <a href="<?= $viewUrl ?>" target="_blank" class="text-white text-truncate me-2">
-                                        <i class="bi bi-file-earmark me-1"></i><?= e($fileName) ?>
-                                    </a>
-                                    <a href="<?= $downloadUrl ?>" class="btn btn-sm btn-outline-light">
-                                        <i class="bi bi-download"></i>
-                                    </a>
-                                </div>
-                            <?php else: ?>
-                                <?= e($m['message'] ?? '') ?>
+                            <?php if (!empty($m['message'])): ?>
+                                <div><?= e($m['message']) ?></div>
+                            <?php endif; ?>
+                            <?php
+                            $attachments = (isset($m['attachments']) && is_array($m['attachments'])) ? $m['attachments'] : [];
+                            if (!empty($attachments)):
+                            ?>
+                                <?php foreach ($attachments as $attachment): ?>
+                                    <?php
+                                    $attachmentId = (int)($attachment['pk_fileID'] ?? 0);
+                                    $viewUrl = '/download_chat_file.php?id=' . $attachmentId . '&mode=view';
+                                    $downloadUrl = '/download_chat_file.php?id=' . $attachmentId . '&mode=download';
+                                    $attachmentPath = (string)($attachment['file_path'] ?? '');
+                                    $fileName = (string)($attachment['file_name'] ?? '');
+                                    if ($fileName === '') {
+                                        $fileName = basename($attachmentPath);
+                                    }
+                                    ?>
+                                    <div class="d-flex align-items-center justify-content-between mb-1">
+                                        <a href="<?= e($viewUrl) ?>" target="_blank" class="text-white text-truncate me-2">
+                                            <i class="bi bi-file-earmark me-1"></i><?= e($fileName) ?>
+                                        </a>
+                                        <a href="<?= e($downloadUrl) ?>" class="btn btn-sm btn-outline-light">
+                                            <i class="bi bi-download"></i>
+                                        </a>
+                                    </div>
+                                <?php endforeach; ?>
                             <?php endif; ?>
                         </div>
                         <small class="text-muted"><?= e($msgTime) ?></small>

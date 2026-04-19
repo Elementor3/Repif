@@ -84,7 +84,7 @@ function sendGroupLeftSystemMessage(mysqli $conn, int $conversationId, string $a
     }
 
     $message = buildSystemLeftGroupMessage($actorUsername, $actorDisplayName);
-    return sendMessage($conn, $conversationId, $actorUsername, $message, null, null) > 0;
+    return sendMessage($conn, $conversationId, $actorUsername, $message) > 0;
 }
 
 function sendGroupJoinedSystemMessage(mysqli $conn, int $conversationId, string $actorUsername, string $actorDisplayName): bool {
@@ -93,7 +93,7 @@ function sendGroupJoinedSystemMessage(mysqli $conn, int $conversationId, string 
     }
 
     $message = buildSystemJoinedGroupMessage($actorUsername, $actorDisplayName);
-    return sendMessage($conn, $conversationId, $actorUsername, $message, null, null) > 0;
+    return sendMessage($conn, $conversationId, $actorUsername, $message) > 0;
 }
 
 function ensureGroupAvatarSchema(mysqli $conn): void {
@@ -138,7 +138,7 @@ function markConversationRead(mysqli $conn, int $conversationId, string $usernam
         $existsStmt = $conn->prepare(
             "SELECT 1
              FROM chat_message
-             WHERE pk_messageID = ? AND fk_conversation = ?
+               WHERE pk_messageID = ? AND fk_conversation = ? AND status = 'sent'
              LIMIT 1"
         );
         $existsStmt->bind_param("ii", $targetId, $conversationId);
@@ -150,7 +150,7 @@ function markConversationRead(mysqli $conn, int $conversationId, string $usernam
     }
 
     if ($targetId === null) {
-        $maxStmt = $conn->prepare("SELECT COALESCE(MAX(pk_messageID), 0) AS max_id FROM chat_message WHERE fk_conversation = ?");
+        $maxStmt = $conn->prepare("SELECT COALESCE(MAX(pk_messageID), 0) AS max_id FROM chat_message WHERE fk_conversation = ? AND status = 'sent'");
         $maxStmt->bind_param("i", $conversationId);
         $maxStmt->execute();
         $targetId = (int)($maxStmt->get_result()->fetch_assoc()['max_id'] ?? 0);
@@ -188,6 +188,7 @@ function getUnreadCountsByConversation(mysqli $conn, string $username): array {
          LEFT JOIN chat_message cm
             ON cm.fk_conversation = cp.fk_conversation
            AND cm.fk_sender <> cp.fk_user
+                     AND cm.status = 'sent'
                      AND cm.pk_messageID > COALESCE(crs.lastReadMessageId, 0)
          WHERE cp.fk_user = ?
          GROUP BY cp.fk_conversation"
@@ -214,7 +215,13 @@ function getChatDraft(mysqli $conn, string $username, int $conversationId): stri
         return '';
     }
 
-    $stmt = $conn->prepare("SELECT text AS draft_text FROM chat_draft WHERE fk_conversation = ? AND fk_user = ? LIMIT 1");
+    $stmt = $conn->prepare(
+        "SELECT message AS draft_text
+         FROM chat_message
+         WHERE fk_conversation = ? AND fk_sender = ? AND status = 'draft'
+         ORDER BY pk_messageID DESC
+         LIMIT 1"
+    );
     $stmt->bind_param("is", $conversationId, $username);
     $stmt->execute();
     $row = $stmt->get_result()->fetch_assoc();
@@ -227,17 +234,32 @@ function saveChatDraft(mysqli $conn, string $username, int $conversationId, stri
     }
 
     $draftText = mb_substr($draftText, 0, 4000);
-    $now = date('Y-m-d H:i:s');
 
-    $stmt = $conn->prepare(
-        "INSERT INTO chat_draft (fk_conversation, fk_user, text, updatedAt)
-         VALUES (?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE
-            text = VALUES(text),
-            updatedAt = VALUES(updatedAt)"
+    $findStmt = $conn->prepare(
+        "SELECT pk_messageID
+         FROM chat_message
+         WHERE fk_conversation = ? AND fk_sender = ? AND status = 'draft'
+         ORDER BY pk_messageID DESC
+         LIMIT 1"
     );
-    $stmt->bind_param("isss", $conversationId, $username, $draftText, $now);
-    return $stmt->execute();
+    $findStmt->bind_param("is", $conversationId, $username);
+    $findStmt->execute();
+    $draftRow = $findStmt->get_result()->fetch_assoc();
+
+    if ($draftRow) {
+        $draftId = (int)$draftRow['pk_messageID'];
+        $upd = $conn->prepare("UPDATE chat_message SET message = ? WHERE pk_messageID = ?");
+        $upd->bind_param("si", $draftText, $draftId);
+        return $upd->execute();
+    }
+
+    $now = date('Y-m-d H:i:s');
+    $ins = $conn->prepare(
+        "INSERT INTO chat_message (fk_conversation, fk_sender, message, status, createdAt, sentAt)
+         VALUES (?, ?, ?, 'draft', ?, NULL)"
+    );
+    $ins->bind_param("isss", $conversationId, $username, $draftText, $now);
+    return $ins->execute();
 }
 
 function deleteChatDraft(mysqli $conn, string $username, int $conversationId): bool {
@@ -245,7 +267,7 @@ function deleteChatDraft(mysqli $conn, string $username, int $conversationId): b
         return false;
     }
 
-    $stmt = $conn->prepare("DELETE FROM chat_draft WHERE fk_conversation = ? AND fk_user = ?");
+    $stmt = $conn->prepare("DELETE FROM chat_message WHERE fk_conversation = ? AND fk_sender = ? AND status = 'draft'");
     $stmt->bind_param("is", $conversationId, $username);
     return $stmt->execute();
 }
@@ -256,27 +278,75 @@ function getChatDraftFiles(mysqli $conn, string $username, int $conversationId):
     }
 
     $stmt = $conn->prepare(
-           "SELECT pk_fileID AS pk_draft_file_id, filePath AS file_path, fileName AS file_name
-         FROM chat_draft_file
-         WHERE fk_conversation = ? AND fk_user = ?
-            ORDER BY pk_fileID ASC"
+        "SELECT a.pk_fileID AS pk_draft_file_id, a.filePath AS file_path, a.fileName AS file_name
+         FROM chat_message m
+         JOIN chat_message_attachment a ON a.fk_message = m.pk_messageID
+         WHERE m.fk_conversation = ? AND m.fk_sender = ? AND m.status = 'draft'
+         ORDER BY a.pk_fileID ASC"
     );
     $stmt->bind_param("is", $conversationId, $username);
     $stmt->execute();
     return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 }
 
-function addChatDraftFile(mysqli $conn, string $username, int $conversationId, string $storedName, string $displayName): bool {
+function getChatAttachmentColumnSupport(mysqli $conn): array {
+    static $cached = null;
+    if (is_array($cached)) {
+        return $cached;
+    }
+
+    $hasMimeType = false;
+    $hasSize = false;
+
+    $res = @$conn->query("SHOW COLUMNS FROM chat_message_attachment");
+    if ($res instanceof mysqli_result) {
+        while ($row = $res->fetch_assoc()) {
+            $field = strtolower((string)($row['Field'] ?? ''));
+            if ($field === 'mime_type') {
+                $hasMimeType = true;
+            }
+            if ($field === 'size') {
+                $hasSize = true;
+            }
+        }
+    }
+
+    $cached = [
+        'mime_type' => $hasMimeType,
+        'size' => $hasSize,
+    ];
+    return $cached;
+}
+
+function addChatDraftFile(mysqli $conn, string $username, int $conversationId, string $storedName, string $displayName, ?string $mimeType = null, ?int $size = null): bool {
     if ($username === '' || $conversationId <= 0 || $storedName === '') {
         return false;
     }
 
-    $stmt = $conn->prepare(
-        "INSERT INTO chat_draft_file (fk_conversation, fk_user, filePath, fileName, createdAt)
-         VALUES (?, ?, ?, ?, ?)"
-    );
+    $draftId = ensureDraftMessageId($conn, $conversationId, $username);
+    if ($draftId <= 0) {
+        return false;
+    }
+
+    $columns = getChatAttachmentColumnSupport($conn);
     $now = date('Y-m-d H:i:s');
-    $stmt->bind_param("issss", $conversationId, $username, $storedName, $displayName, $now);
+
+    if (!empty($columns['mime_type']) || !empty($columns['size'])) {
+        $stmt = $conn->prepare(
+            "INSERT INTO chat_message_attachment (fk_message, filePath, fileName, mime_type, size, createdAt)
+             VALUES (?, ?, ?, ?, ?, ?)"
+        );
+        $safeMime = $mimeType !== null ? (string)$mimeType : null;
+        $safeSize = $size !== null ? (int)$size : null;
+        $stmt->bind_param("isssis", $draftId, $storedName, $displayName, $safeMime, $safeSize, $now);
+        return $stmt->execute();
+    }
+
+    $stmt = $conn->prepare(
+        "INSERT INTO chat_message_attachment (fk_message, filePath, fileName, createdAt)
+         VALUES (?, ?, ?, ?)"
+    );
+    $stmt->bind_param("isss", $draftId, $storedName, $displayName, $now);
     return $stmt->execute();
 }
 
@@ -285,21 +355,25 @@ function deleteChatDraftFileById(mysqli $conn, string $username, int $conversati
         return null;
     }
 
-    $sel = $conn->prepare(
-           "SELECT pk_fileID AS pk_draft_file_id, filePath AS file_path, fileName AS file_name
-         FROM chat_draft_file
-            WHERE pk_fileID = ? AND fk_conversation = ? AND fk_user = ?
-         LIMIT 1"
-    );
-    $sel->bind_param("iis", $draftFileId, $conversationId, $username);
+        $sel = $conn->prepare(
+                "SELECT a.pk_fileID AS pk_draft_file_id, a.filePath AS file_path, a.fileName AS file_name
+                 FROM chat_message_attachment a
+                 JOIN chat_message m ON m.pk_messageID = a.fk_message
+                 WHERE a.pk_fileID = ?
+                     AND m.fk_conversation = ?
+                     AND m.fk_sender = ?
+                     AND m.status = 'draft'
+                 LIMIT 1"
+        );
+        $sel->bind_param("iis", $draftFileId, $conversationId, $username);
     $sel->execute();
     $row = $sel->get_result()->fetch_assoc();
     if (!$row) {
         return null;
     }
 
-    $del = $conn->prepare("DELETE FROM chat_draft_file WHERE pk_fileID = ? AND fk_conversation = ? AND fk_user = ?");
-    $del->bind_param("iis", $draftFileId, $conversationId, $username);
+        $del = $conn->prepare("DELETE FROM chat_message_attachment WHERE pk_fileID = ?");
+        $del->bind_param("i", $draftFileId);
     $del->execute();
 
     return $row;
@@ -311,7 +385,12 @@ function clearChatDraftFiles(mysqli $conn, string $username, int $conversationId
         return [];
     }
 
-    $del = $conn->prepare("DELETE FROM chat_draft_file WHERE fk_conversation = ? AND fk_user = ?");
+    $del = $conn->prepare(
+        "DELETE a
+         FROM chat_message_attachment a
+         JOIN chat_message m ON m.pk_messageID = a.fk_message
+         WHERE m.fk_conversation = ? AND m.fk_sender = ? AND m.status = 'draft'"
+    );
     $del->bind_param("is", $conversationId, $username);
     $del->execute();
 
@@ -321,7 +400,7 @@ function clearChatDraftFiles(mysqli $conn, string $username, int $conversationId
 function getConversations(mysqli $conn, string $username): array {
     ensureGroupAvatarSchema($conn);
 
-    $stmt = $conn->prepare("SELECT cc.*, (SELECT cm.message FROM chat_message cm WHERE cm.fk_conversation = cc.pk_conversationID ORDER BY cm.createdAt DESC LIMIT 1) AS last_message, (SELECT cm.createdAt FROM chat_message cm WHERE cm.fk_conversation = cc.pk_conversationID ORDER BY cm.createdAt DESC LIMIT 1) AS last_message_at FROM chat_conversation cc JOIN chat_participant cp ON cc.pk_conversationID = cp.fk_conversation WHERE cp.fk_user = ? ORDER BY last_message_at DESC");
+    $stmt = $conn->prepare("SELECT cc.*, (SELECT cm.message FROM chat_message cm WHERE cm.fk_conversation = cc.pk_conversationID AND cm.status = 'sent' ORDER BY cm.createdAt DESC LIMIT 1) AS last_message, (SELECT cm.createdAt FROM chat_message cm WHERE cm.fk_conversation = cc.pk_conversationID AND cm.status = 'sent' ORDER BY cm.createdAt DESC LIMIT 1) AS last_message_at FROM chat_conversation cc JOIN chat_participant cp ON cc.pk_conversationID = cp.fk_conversation WHERE cp.fk_user = ? ORDER BY last_message_at DESC");
     $stmt->bind_param("s", $username);
     $stmt->execute();
     $convs = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
@@ -424,10 +503,47 @@ function updateGroupConversationAvatar(mysqli $conn, int $chatId, string $avatar
 }
 
 function getMessages(mysqli $conn, int $conversationId, int $sinceId = 0): array {
-    $stmt = $conn->prepare("SELECT cm.*, cm.filePath AS file_path, cm.fileName AS file_name, u.firstName, u.lastName, u.avatar FROM chat_message cm LEFT JOIN user u ON cm.fk_sender = u.pk_username WHERE cm.fk_conversation = ? AND cm.pk_messageID > ? ORDER BY cm.createdAt ASC LIMIT 100");
+    $stmt = $conn->prepare("SELECT cm.*, u.firstName, u.lastName, u.avatar FROM chat_message cm LEFT JOIN user u ON cm.fk_sender = u.pk_username WHERE cm.fk_conversation = ? AND cm.status = 'sent' AND cm.pk_messageID > ? ORDER BY cm.createdAt ASC LIMIT 100");
     $stmt->bind_param("ii", $conversationId, $sinceId);
     $stmt->execute();
     $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+    if (!empty($rows)) {
+        $messageIds = array_map(static function (array $row): int {
+            return (int)$row['pk_messageID'];
+        }, $rows);
+
+        $placeholders = implode(',', array_fill(0, count($messageIds), '?'));
+        $types = str_repeat('i', count($messageIds));
+
+        $attStmt = $conn->prepare(
+            "SELECT pk_fileID, fk_message, filePath AS file_path, fileName AS file_name, mime_type, size, createdAt
+             FROM chat_message_attachment
+             WHERE fk_message IN ($placeholders)
+             ORDER BY pk_fileID ASC"
+        );
+        $attStmt->bind_param($types, ...$messageIds);
+        $attStmt->execute();
+        $attRows = $attStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+
+        $attachmentsByMessage = [];
+        foreach ($attRows as $att) {
+            $messageId = (int)($att['fk_message'] ?? 0);
+            if ($messageId <= 0) {
+                continue;
+            }
+            if (!isset($attachmentsByMessage[$messageId])) {
+                $attachmentsByMessage[$messageId] = [];
+            }
+            $attachmentsByMessage[$messageId][] = $att;
+        }
+
+        foreach ($rows as &$rowRef) {
+            $mid = (int)($rowRef['pk_messageID'] ?? 0);
+            $rowRef['attachments'] = $attachmentsByMessage[$mid] ?? [];
+        }
+        unset($rowRef);
+    }
 
     foreach ($rows as &$row) {
         $first = trim((string)($row['firstName'] ?? ''));
@@ -461,11 +577,71 @@ function getMessages(mysqli $conn, int $conversationId, int $sinceId = 0): array
     return $rows;
 }
 
-function sendMessage(mysqli $conn, int $conversationId, string $sender, ?string $message, ?string $filePath = null, ?string $fileName = null): int {
+function sendMessage(mysqli $conn, int $conversationId, string $sender, ?string $message): int {
+    $message = $message ?? '';
     $now = date('Y-m-d H:i:s');
-    $stmt = $conn->prepare("INSERT INTO chat_message (fk_conversation, fk_sender, message, filePath, fileName, createdAt) VALUES (?,?,?,?,?,?)");
-    $stmt->bind_param("isssss", $conversationId, $sender, $message, $filePath, $fileName, $now);
+    $stmt = $conn->prepare("INSERT INTO chat_message (fk_conversation, fk_sender, message, status, createdAt, sentAt) VALUES (?,?,?,'sent',?,?)");
+    $stmt->bind_param("issss", $conversationId, $sender, $message, $now, $now);
     if (!$stmt->execute()) return 0;
+    return (int)$conn->insert_id;
+}
+
+function addMessageAttachment(mysqli $conn, int $messageId, string $storedName, string $displayName, ?string $mimeType = null, ?int $size = null): bool {
+    if ($messageId <= 0 || $storedName === '') {
+        return false;
+    }
+
+    $columns = getChatAttachmentColumnSupport($conn);
+    $now = date('Y-m-d H:i:s');
+
+    if (!empty($columns['mime_type']) || !empty($columns['size'])) {
+        $stmt = $conn->prepare(
+            "INSERT INTO chat_message_attachment (fk_message, filePath, fileName, mime_type, size, createdAt)
+             VALUES (?, ?, ?, ?, ?, ?)"
+        );
+        $safeMime = $mimeType !== null ? (string)$mimeType : null;
+        $safeSize = $size !== null ? (int)$size : null;
+        $stmt->bind_param("isssis", $messageId, $storedName, $displayName, $safeMime, $safeSize, $now);
+        return $stmt->execute();
+    }
+
+    $stmt = $conn->prepare(
+        "INSERT INTO chat_message_attachment (fk_message, filePath, fileName, createdAt)
+         VALUES (?, ?, ?, ?)"
+    );
+    $stmt->bind_param("isss", $messageId, $storedName, $displayName, $now);
+    return $stmt->execute();
+}
+
+function ensureDraftMessageId(mysqli $conn, int $conversationId, string $username): int {
+    if ($conversationId <= 0 || $username === '') {
+        return 0;
+    }
+
+    $stmt = $conn->prepare(
+        "SELECT pk_messageID
+         FROM chat_message
+         WHERE fk_conversation = ? AND fk_sender = ? AND status = 'draft'
+         ORDER BY pk_messageID DESC
+         LIMIT 1"
+    );
+    $stmt->bind_param("is", $conversationId, $username);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    if ($row) {
+        return (int)$row['pk_messageID'];
+    }
+
+    $now = date('Y-m-d H:i:s');
+    $insert = $conn->prepare(
+        "INSERT INTO chat_message (fk_conversation, fk_sender, message, status, createdAt, sentAt)
+         VALUES (?, ?, '', 'draft', ?, NULL)"
+    );
+    $insert->bind_param("iss", $conversationId, $username, $now);
+    if (!$insert->execute()) {
+        return 0;
+    }
+
     return (int)$conn->insert_id;
 }
 

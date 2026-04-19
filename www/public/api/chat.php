@@ -15,6 +15,45 @@ if (!isLoggedIn()) {
 $username = $_SESSION['username'];
 $action = $_GET['action'] ?? $_POST['action'] ?? '';
 
+function iniSizeToBytes(string $size): int {
+    $size = trim($size);
+    if ($size === '') {
+        return 0;
+    }
+
+    $unit = strtolower(substr($size, -1));
+    $value = (float)$size;
+
+    switch ($unit) {
+        case 'g':
+            $value *= 1024;
+            // no break
+        case 'm':
+            $value *= 1024;
+            // no break
+        case 'k':
+            $value *= 1024;
+            break;
+        default:
+            break;
+    }
+
+    return (int)$value;
+}
+
+function logChatApiError(string $event, array $context = []): void {
+    $payload = $context ? (' ' . json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)) : '';
+    error_log('[chat_api] ' . $event . $payload);
+}
+
+$contentLength = (int)($_SERVER['CONTENT_LENGTH'] ?? 0);
+$postMaxBytes = iniSizeToBytes((string)ini_get('post_max_size'));
+if ($contentLength > 0 && $postMaxBytes > 0 && $contentLength > $postMaxBytes) {
+    http_response_code(413);
+    echo json_encode(['success' => false, 'message' => t('file_too_large')]);
+    exit;
+}
+
 function moveFileSafely(string $source, string $destination): bool {
     if (@rename($source, $destination)) {
         return true;
@@ -45,10 +84,9 @@ if ($action === 'send') {
         exit;
     }
 
-    $fileErrors   = [];
-    $anyFileSaved = false;
+    $fileErrors = [];
+    $attachmentsToAdd = [];
 
-    // Обработка нескольких файлов
     if ($files && isset($files['tmp_name']) && is_array($files['tmp_name'])) {
         $count = count($files['tmp_name']);
 
@@ -62,11 +100,10 @@ if ($action === 'send') {
                 continue;
             }
 
-            $tmpName  = $files['tmp_name'][$i];
-            $origName = $files['name'][$i];
+            $origName = (string)($files['name'][$i] ?? 'file');
             $fileData = [
                 'name' => $origName,
-                'tmp_name' => $tmpName,
+                'tmp_name' => (string)$files['tmp_name'][$i],
                 'size' => (int)($files['size'][$i] ?? 0),
                 'error' => (int)($files['error'][$i] ?? UPLOAD_ERR_NO_FILE),
             ];
@@ -88,15 +125,15 @@ if ($action === 'send') {
                 continue;
             }
 
-            // Отдельное сообщение только с файлом
-            $msgId = sendMessage($conn, $convId, $username, null, $newName, $origName);
-            if ($msgId > 0) {
-                $anyFileSaved = true;
-            }
+            $attachmentsToAdd[] = [
+                'stored' => $newName,
+                'display' => $origName,
+                'mime' => (string)($validation['mime'] ?? ''),
+                'size' => (int)($validation['size'] ?? 0),
+            ];
         }
     }
 
-    // Draft files (already uploaded earlier, now materialize as chat messages)
     $draftFiles = getChatDraftFiles($conn, $username, $convId);
     foreach ($draftFiles as $draftFile) {
         $storedDraft = basename((string)($draftFile['file_path'] ?? ''));
@@ -118,34 +155,59 @@ if ($action === 'send') {
             continue;
         }
 
-        $msgId = sendMessage(
-            $conn,
-            $convId,
-            $username,
-            null,
-            $newName,
-            (string)($draftFile['file_name'] ?? $storedDraft)
-        );
-        if ($msgId > 0) {
-            $anyFileSaved = true;
-        }
+        $attachmentsToAdd[] = [
+            'stored' => $newName,
+            'display' => (string)($draftFile['file_name'] ?? $storedDraft),
+            'mime' => detectMimeTypeForPath($destPath),
+            'size' => (int)(@filesize($destPath) ?: 0),
+        ];
     }
 
-    // Если ни одного валидного файла не сохранили и нет текста
-    if (!$anyFileSaved && $message === '') {
+    if ($message === '' && empty($attachmentsToAdd)) {
         $err = !empty($fileErrors) ? implode("\n", $fileErrors) : t('empty_message');
         echo json_encode(['success' => false, 'message' => $err]);
         exit;
     }
 
-    // Текст отправляем ОТДЕЛЬНЫМ сообщением ПОСЛЕ файлов
-    if ($message !== '') {
-        sendMessage($conn, $convId, $username, $message, null, null);
+    $conn->begin_transaction();
+    try {
+        // Keep file-only sends compatible with schemas where message is NOT NULL.
+        $msgId = sendMessage($conn, $convId, $username, $message);
+        if ($msgId <= 0) {
+            $dbError = trim((string)$conn->error);
+            throw new RuntimeException('message_insert_failed' . ($dbError !== '' ? (': ' . $dbError) : ''));
+        }
+
+        foreach ($attachmentsToAdd as $attachment) {
+            $ok = addMessageAttachment(
+                $conn,
+                $msgId,
+                (string)($attachment['stored'] ?? ''),
+                (string)($attachment['display'] ?? ''),
+                (string)($attachment['mime'] ?? ''),
+                (int)($attachment['size'] ?? 0)
+            );
+            if (!$ok) {
+                $fileErrors[] = t('file_upload_failed') . ': ' . (string)($attachment['display'] ?? 'file');
+            }
+        }
+
+        clearChatDraftFiles($conn, $username, $convId);
+        deleteChatDraft($conn, $username, $convId);
+        $conn->commit();
+    } catch (Throwable $e) {
+        $conn->rollback();
+        logChatApiError('send_failed', [
+            'conv_id' => $convId,
+            'user' => $username,
+            'message_len' => strlen($message),
+            'attachments' => count($attachmentsToAdd),
+            'error' => $e->getMessage(),
+        ]);
+        echo json_encode(['success' => false, 'message' => t('error_occurred')]);
+        exit;
     }
 
-    deleteChatDraft($conn, $username, $convId);
-    saveChatDraft($conn, $username, $convId, '');
-    clearChatDraftFiles($conn, $username, $convId);
     echo json_encode([
         'success' => true,
         'errors'  => $fileErrors,
@@ -229,6 +291,15 @@ if ($action === 'send') {
     }
 
     if (trim($draft) === '') {
+        // Keep an empty draft row when file attachments exist,
+        // otherwise removing text would wipe file-only drafts.
+        $existingFiles = getChatDraftFiles($conn, $username, $convId);
+        if (!empty($existingFiles)) {
+            $ok = saveChatDraft($conn, $username, $convId, '');
+            echo json_encode(['success' => $ok]);
+            exit;
+        }
+
         deleteChatDraft($conn, $username, $convId);
         echo json_encode(['success' => true]);
         exit;
@@ -272,7 +343,12 @@ if ($action === 'send') {
     }
 
     $errors = [];
-    ensureDirectory(getChatDraftUploadsDir());
+    $savedCount = 0;
+
+    if (!ensureDirectory(getChatDraftUploadsDir())) {
+        echo json_encode(['success' => false, 'message' => t('file_upload_failed')]);
+        exit;
+    }
 
     for ($i = 0; $i < $count; $i++) {
         if (empty($files['tmp_name'][$i])) {
@@ -304,7 +380,33 @@ if ($action === 'send') {
             continue;
         }
 
-        addChatDraftFile($conn, $username, $convId, $storedName, $origName);
+        if (!addChatDraftFile(
+            $conn,
+            $username,
+            $convId,
+            $storedName,
+            $origName,
+            (string)($validation['mime'] ?? ''),
+            (int)($validation['size'] ?? 0)
+        )) {
+            $errors[] = t('error_occurred') . ': ' . $origName;
+            $storedPath = getChatDraftUploadsDir() . DIRECTORY_SEPARATOR . basename($storedName);
+            if (is_file($storedPath)) {
+                @unlink($storedPath);
+            }
+            continue;
+        }
+
+        $savedCount++;
+    }
+
+    if ($savedCount === 0 && !empty($errors)) {
+        echo json_encode([
+            'success' => false,
+            'message' => implode("\n", $errors),
+            'files' => getChatDraftFiles($conn, $username, $convId),
+        ]);
+        exit;
     }
 
     echo json_encode([

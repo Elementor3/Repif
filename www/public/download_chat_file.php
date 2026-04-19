@@ -14,11 +14,12 @@ if (!$username || !$fileId) {
     exit('Bad request');
 }
 $mode = $_GET['mode'] ?? 'download';
-// Find message with this id and ensure it has a file
+// Find attachment by id and ensure parent message is visible in chat
 $stmt = $conn->prepare(
-    "SELECT m.filePath AS file_path, m.fileName AS file_name, m.fk_conversation
-     FROM chat_message m
-     WHERE m.pk_messageID = ? AND m.filePath IS NOT NULL"
+    "SELECT a.filePath AS file_path, a.fileName AS file_name, m.fk_conversation
+     FROM chat_message_attachment a
+     JOIN chat_message m ON m.pk_messageID = a.fk_message
+     WHERE a.pk_fileID = ? AND m.status = 'sent'"
 );
 $stmt->bind_param("i", $fileId);
 $stmt->execute();

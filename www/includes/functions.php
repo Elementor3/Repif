@@ -62,43 +62,46 @@ function getAllowedAvatarExtensions(): array {
 }
 
 function getPresetAvatarFiles(?string $presetsDir = null): array {
-    $avatarsDir = $presetsDir ?? (__DIR__ . '/../assets/avatars');
-    $legacyDir = __DIR__ . '/../assets/avatars/presets';
-    if (!is_dir($avatarsDir) && is_dir($legacyDir)) {
-        $avatarsDir = $legacyDir;
-    }
-    if (!is_dir($avatarsDir)) return [];
-
     $allowedExt = array_map('strtolower', getAllowedAvatarExtensions());
-    $avatars = [];
+    $searchDirs = [];
+    if ($presetsDir !== null && trim($presetsDir) !== '') {
+        $searchDirs[] = (string)$presetsDir;
+    }
 
-    foreach (scandir($avatarsDir) ?: [] as $file) {
-        $fullPath = $avatarsDir . DIRECTORY_SEPARATOR . $file;
-        if (!is_file($fullPath)) {
+    // Current project layout keeps stock avatars under /public/assets/avatars.
+    $searchDirs[] = __DIR__ . '/../public/assets/avatars';
+
+    // Legacy fallbacks kept for compatibility with older layouts.
+    $searchDirs[] = __DIR__ . '/../assets/avatars';
+    $searchDirs[] = __DIR__ . '/../assets/avatars/presets';
+
+    $avatars = [];
+    foreach ($searchDirs as $dir) {
+        if (!is_dir($dir)) {
             continue;
         }
 
-        $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
-        if ($ext !== '' && in_array($ext, $allowedExt, true)) {
-            $avatars[] = $file;
-        }
-    }
-
-    if (empty($avatars) && $avatarsDir !== $legacyDir && is_dir($legacyDir)) {
-        foreach (scandir($legacyDir) ?: [] as $file) {
-            $fullPath = $legacyDir . DIRECTORY_SEPARATOR . $file;
+        foreach (scandir($dir) ?: [] as $file) {
+            $fullPath = $dir . DIRECTORY_SEPARATOR . $file;
             if (!is_file($fullPath)) {
                 continue;
             }
+
             $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
             if ($ext !== '' && in_array($ext, $allowedExt, true)) {
-                $avatars[] = $file;
+                $avatars[$file] = true;
             }
+        }
+
+        // Prefer the first existing directory with avatars.
+        if (!empty($avatars)) {
+            break;
         }
     }
 
-    natcasesort($avatars);
-    return array_values($avatars);
+    $files = array_keys($avatars);
+    natcasesort($files);
+    return array_values($files);
 }
 
 function getUploadsBaseDir(): string {
@@ -173,6 +176,9 @@ function detectMimeTypeForPath(string $path): string {
 function validateUploadedFile(array $file, array $allowedExt, array $allowedMimes, int $maxFileSize): array {
     $error = (int)($file['error'] ?? UPLOAD_ERR_NO_FILE);
     if ($error !== UPLOAD_ERR_OK) {
+        if ($error === UPLOAD_ERR_INI_SIZE || $error === UPLOAD_ERR_FORM_SIZE) {
+            return ['ok' => false, 'message_key' => 'file_too_large'];
+        }
         return ['ok' => false, 'message_key' => 'file_upload_failed'];
     }
 

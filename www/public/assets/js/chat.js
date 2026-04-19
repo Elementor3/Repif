@@ -254,16 +254,29 @@
 				html += '</div>';
 			}
 			html += '<div class="bubble">';
-			if (m.file_name) {
-				var viewUrl = '/download_chat_file.php?id=' + encodeURIComponent(m.pk_messageID) + '&mode=view';
-				var downloadUrl = '/download_chat_file.php?id=' + encodeURIComponent(m.pk_messageID) + '&mode=download';
-				html += '<div class="d-flex align-items-center justify-content-between">';
-				html += '<a href="' + viewUrl + '" target="_blank" class="text-white text-truncate me-2">';
-				html += '<i class="bi bi-file-earmark me-1"></i>' + esc(m.file_name) + '</a>';
-				html += '<a href="' + downloadUrl + '" class="btn btn-sm btn-outline-light" download><i class="bi bi-download"></i></a>';
-				html += '</div>';
-			} else {
-				html += esc(m.message || '');
+				if (m.message) {
+					html += esc(m.message);
+				}
+
+			var attachments = Array.isArray(m.attachments) ? m.attachments : [];
+			if (attachments.length) {
+				attachments.forEach(function (a) {
+					var attachmentId = Number(a.pk_fileID || 0);
+					if (!attachmentId) return;
+					var filePath = String(a.file_path || '');
+					var fileName = String(a.file_name || '').trim();
+					if (!fileName) {
+						var pathParts = filePath.split('/');
+						fileName = pathParts[pathParts.length - 1] || 'file';
+					}
+					var viewUrl = '/download_chat_file.php?id=' + encodeURIComponent(attachmentId) + '&mode=view';
+					var downloadUrl = '/download_chat_file.php?id=' + encodeURIComponent(attachmentId) + '&mode=download';
+					html += '<div class="d-flex align-items-center justify-content-between mb-1">';
+					html += '<a href="' + viewUrl + '" target="_blank" class="text-white text-truncate me-2">';
+					html += '<i class="bi bi-file-earmark me-1"></i>' + esc(fileName) + '</a>';
+					html += '<a href="' + downloadUrl + '" class="btn btn-sm btn-outline-light" download><i class="bi bi-download"></i></a>';
+					html += '</div>';
+				});
 			}
 			html += '</div><small class="text-muted">' + esc(timeFromDateStr(m.createdAt)) + '</small></div>';
 			return html;
@@ -908,9 +921,31 @@
 							if (res.errors && res.errors.length) {
 								alert(res.errors.join('\n'));
 							}
-						} else if (res && res.message) {
-							alert(res.message);
+						} else {
+							chatSelectedFiles = chatSelectedFiles.concat(files);
+							renderAttachmentPreview();
+							if (res && res.message) {
+								alert(res.message);
+							}
 						}
+					},
+					error: function (xhr) {
+						chatSelectedFiles = chatSelectedFiles.concat(files);
+						renderAttachmentPreview();
+						var msg = chatErrorText;
+						if (xhr && xhr.responseJSON && xhr.responseJSON.message) {
+							msg = xhr.responseJSON.message;
+						} else if (xhr && xhr.responseText) {
+							try {
+								var parsed = JSON.parse(xhr.responseText);
+								if (parsed && parsed.message) {
+									msg = parsed.message;
+								}
+							} catch (e) {
+								// Keep fallback text when response body is not JSON.
+							}
+						}
+						alert(msg);
 					}
 				});
 			}
@@ -963,6 +998,22 @@
 					} else if (res && res.message) {
 						alert(res.message);
 					}
+				},
+				error: function (xhr) {
+					var msg = chatErrorText;
+					if (xhr && xhr.responseJSON && xhr.responseJSON.message) {
+						msg = xhr.responseJSON.message;
+					} else if (xhr && xhr.responseText) {
+						try {
+							var parsed = JSON.parse(xhr.responseText);
+							if (parsed && parsed.message) {
+								msg = parsed.message;
+							}
+						} catch (e) {
+							// Keep generic fallback when the response is not valid JSON.
+						}
+					}
+					alert(msg);
 				}
 			});
 		});
