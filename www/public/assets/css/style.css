@@ -1,0 +1,298 @@
+/* Body padding for fixed navbar */
+body {
+    padding-top: 70px;
+}
+
+/* Navbar theming */
+[data-bs-theme="light"] .navbar-themed {
+    background-color: #ffffff;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+[data-bs-theme="dark"] .navbar-themed {
+    background-color: #1a1a2e;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+}
+
+.navbar-themed .container {
+    flex-wrap: nowrap;
+}
+
+.navbar-themed .navbar-brand,
+.navbar-themed .nav-link,
+.navbar-themed .btn.nav-link {
+    white-space: nowrap;
+}
+
+.navbar-themed .navbar-nav {
+    flex-wrap: nowrap;
+}
+
+.navbar-themed .navbar-brand {
+    flex-shrink: 1;
+    min-width: 0;
+}
+
+.navbar-themed .navbar-identity {
+    min-width: 0;
+    max-width: min(42vw, 460px);
+    gap: 0.2rem;
+}
+
+.navbar-themed .navbar-identity-avatar {
+    width: 32px;
+    height: 32px;
+    object-fit: cover;
+    flex-shrink: 0;
+}
+
+.navbar-themed .navbar-identity-avatar-fallback {
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.navbar-themed .navbar-identity-name {
+    display: block;
+    min-width: 0;
+    line-height: 1.1;
+    white-space: nowrap;
+    font-size: 1rem;
+}
+
+/* Card shadows */
+.card {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    border-radius: 0.75rem;
+}
+[data-bs-theme="dark"] .card {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+/* Table styles */
+.table-responsive {
+    border-radius: 0.5rem;
+    overflow: hidden;
+}
+
+.post-card-title {
+    display: block;
+    min-width: 0;
+    max-width: calc(100% - 210px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Notification badge */
+.notif-badge {
+    font-size: 0.65rem;
+    min-width: 1.1rem;
+    padding: 0.2em 0.4em;
+}
+.notif-item {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--bs-border-color);
+    cursor: pointer;
+    transition: background 0.15s;
+    position: relative;
+    padding-right: 2rem;
+}
+.notif-item:hover {
+    background-color: var(--bs-secondary-bg);
+}
+.notif-item.unread {
+    background-color: var(--bs-primary-bg-subtle);
+}
+.notif-item .notif-title {
+    font-weight: 600;
+    font-size: 0.85rem;
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.notif-item .notif-msg {
+    font-size: 0.8rem;
+    color: var(--bs-secondary-color);
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.notif-item .notif-time {
+    font-size: 0.72rem;
+    color: var(--bs-tertiary-color);
+}
+
+.notif-delete-btn {
+    position: absolute;
+    top: 0.35rem;
+    right: 0.45rem;
+    border: none;
+    background: transparent;
+    color: var(--bs-secondary-color);
+    font-size: 1rem;
+    line-height: 1;
+    padding: 0.1rem 0.25rem;
+    cursor: pointer;
+}
+
+.notif-delete-btn:hover {
+    color: var(--bs-danger);
+}
+
+#notifModalMessage {
+    white-space: pre-line;
+    word-break: break-word;
+}
+
+/* Loading spinner */
+.spinner-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+}
+
+/* Stats cards */
+.stat-card {
+    transition: transform 0.2s;
+}
+.stat-card:hover {
+    transform: translateY(-3px);
+}
+.stat-card .stat-value {
+    font-size: 2rem;
+    font-weight: 700;
+}
+.stat-card .stat-label {
+    font-size: 0.85rem;
+    color: var(--bs-secondary-color);
+}
+
+/* Measurement chart container */
+#chartContainer {
+    position: relative;
+    max-height: 400px;
+}
+
+/* Filter form */
+.filter-card {
+    border-left: 4px solid #0d6efd;
+}
+
+/* Pagination */
+.pagination-info {
+    color: var(--bs-secondary-color);
+    font-size: 0.875rem;
+}
+
+/* Station card */
+.station-card .sensor-value {
+    font-size: 1.3rem;
+    font-weight: 600;
+}
+.station-card .sensor-label {
+    font-size: 0.75rem;
+    color: var(--bs-secondary-color);
+}
+
+/* Responsive chat */
+@media (max-width: 576px) {
+    #measurementFiltersForm .form-label {
+        font-size: 0.8rem;
+    }
+
+    #dataActionsRow {
+        font-size: 0.8rem;
+    }
+
+    #dataActionsControls .form-label,
+    #dataActionsControls .form-select,
+    #dataActionsControls .btn {
+        font-size: 0.75rem;
+    }
+
+    #dataActionsControls .btn {
+        padding: 0.2rem 0.45rem;
+    }
+
+    #measurementsTableWrap {
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    #measurementsTable {
+        font-size: 0.75rem;
+        min-width: 720px;
+    }
+
+    #measurementsTable th,
+    #measurementsTable td {
+        padding: 0.3rem 0.35rem;
+    }
+
+    #chartMetricButtons .col {
+        display: flex;
+    }
+
+    #chartMetricButtons .btn {
+        white-space: normal;
+        line-height: 1.15;
+        min-height: 3rem;
+        font-size: 0.75rem;
+    }
+
+    #chartDownloadButtons .btn {
+        min-height: 2.5rem;
+        font-size: 0.75rem;
+    }
+
+}
+
+@media (max-width: 991.98px) {
+    .navbar-themed .container {
+        position: relative;
+    }
+
+    .navbar-themed .navbar-collapse {
+        position: absolute;
+        top: calc(100% + 0.25rem);
+        left: 0;
+        right: 0;
+        z-index: 1070;
+        background: var(--bs-body-bg);
+        border: 1px solid var(--bs-border-color);
+        border-radius: 0.5rem;
+        padding: 0.5rem 0.65rem;
+        box-shadow: 0 10px 24px rgba(0,0,0,0.12);
+    }
+
+    .navbar-themed .navbar-collapse .navbar-nav {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .navbar-themed .navbar-collapse .nav-link {
+        white-space: normal;
+    }
+
+    #notifDropdownMenu.notif-dropdown {
+        position: fixed !important;
+        top: 64px !important;
+        right: 0.75rem !important;
+        left: auto !important;
+        margin-top: 0 !important;
+        width: min(360px, calc(100vw - 1.5rem));
+        max-width: calc(100vw - 1.5rem);
+        min-width: 0 !important;
+        z-index: 1080;
+    }
+
+    .navbar-themed .navbar-identity {
+        max-width: calc(100vw - 230px);
+    }
+}

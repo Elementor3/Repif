@@ -6,4 +6,4 @@ assets/avatars/uploads/*
 .DS_Store
 Thumbs.db
 /vendor/
-.env
+
