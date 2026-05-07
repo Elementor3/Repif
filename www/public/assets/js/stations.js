@@ -517,6 +517,18 @@
 		});
 	}
 
+	var prefillCode = i18nEl ? (i18nEl.getAttribute('data-prefill-code') || '') : '';
+	if (prefillCode) {
+		var registerForm = document.getElementById('registerStationForm');
+		var codeInput = registerForm ? registerForm.querySelector('input[name="code"]') : null;
+		if (codeInput) {
+			codeInput.value = prefillCode;
+		}
+		if (registerModalEl) {
+			bootstrap.Modal.getOrCreateInstance(registerModalEl).show();
+		}
+	}
+
 	updateEmptyState();
 	window.editStation = editStation;
 })();

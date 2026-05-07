@@ -97,6 +97,8 @@ return [
     'created_by' => 'Créé par',
     'registered_at' => 'Enregistré le',
     'register_station' => 'Enregistrer la station',
+    'station_registration_code' => 'Code d\'inscription',
+    'station_registration_code_placeholder' => 'Saisissez le code d\'inscription',
     'unregister' => 'Désenregistrer',
     'current_stations' => 'Stations actuelles',
     'past_stations' => 'Anciennes stations',

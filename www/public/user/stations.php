@@ -8,15 +8,17 @@ requireLogin();
 $username = $_SESSION['username'];
 $msg = '';
 $err = '';
+$prefillCode = trim((string)($_GET['code'] ?? ''));
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
     $isAjax = isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower((string)$_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
 
     if ($action === 'register') {
-        $serial = trim($_POST['serial'] ?? '');
-        if ($serial !== '') {
-            if (registerStation($conn, $serial, $username)) {
+        $code = trim($_POST['code'] ?? '');
+        if ($code !== '') {
+            $serial = registerStationByCode($conn, $code, $username);
+            if ($serial !== null) {
                 $msg = t('success');
                 if ($isAjax) {
                     $activeRow = getUserActiveStationOwnershipBySerial($conn, $serial, $username);
@@ -33,16 +35,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     exit;
                 }
             } else {
-                $err = t('station_not_found');
+                $err = t('invalid_registration_code');
                 if ($isAjax) {
                     header('Content-Type: application/json');
-                    echo json_encode(['success' => false, 'message' => t('station_not_found')]);
+                    echo json_encode(['success' => false, 'message' => t('invalid_registration_code')]);
                     exit;
                 }
             }
         } elseif ($isAjax) {
             header('Content-Type: application/json');
-            echo json_encode(['success' => false, 'message' => t('station_not_found')]);
+            echo json_encode(['success' => false, 'message' => t('invalid_registration_code')]);
             exit;
         }
     } elseif ($action === 'update') {
@@ -176,6 +178,7 @@ $currentPageUrl = (string)($_SERVER['REQUEST_URI'] ?? '/user/stations.php');
     data-confirm-delete="<?= e(t('confirm_delete')) ?>"
     data-default-error="<?= e(t('error_occurred')) ?>"
     data-return-to="<?= e($currentPageUrl) ?>"
+    data-prefill-code="<?= e($prefillCode) ?>"
 ></div>
 
 <h5 class="mb-3"><?= e(t('current_stations')) ?></h5>
@@ -273,8 +276,8 @@ $currentPageUrl = (string)($_SERVER['REQUEST_URI'] ?? '/user/stations.php');
                 <div class="modal-body">
                     <div data-modal-alerts class="mb-3"></div>
                     <div class="mb-3">
-                        <label class="form-label"><?= t('serial_number') ?></label>
-                        <input type="text" name="serial" class="form-control" required placeholder="e.g. SN-001">
+                        <label class="form-label"><?= t('station_registration_code') ?></label>
+                        <input type="text" name="code" class="form-control" required placeholder="<?= e(t('station_registration_code_placeholder')) ?>">
                     </div>
                 </div>
                 <div class="modal-footer">

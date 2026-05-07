@@ -97,6 +97,8 @@ return [
     'created_by' => 'Створено',
     'registered_at' => 'Зареєстровано о',
     'register_station' => 'Зареєструвати станцію',
+    'station_registration_code' => 'Код реєстрації',
+    'station_registration_code_placeholder' => 'Введіть код реєстрації',
     'unregister' => 'Скасувати реєстрацію',
     'current_stations' => 'Поточні станції',
     'past_stations' => 'Минулі станції',

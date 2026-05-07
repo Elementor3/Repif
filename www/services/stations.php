@@ -163,6 +163,151 @@ function registerStation(mysqli $conn, string $serial, string $username): bool {
     return $stmt->affected_rows > 0;
 }
 
+function requestStationRegistrationCode(mysqli $conn, string $serial, int $ttlSeconds = 300): ?array {
+    $serial = trim($serial);
+    if ($serial === '') {
+        return null;
+    }
+
+    $station = getStationBySerial($conn, $serial);
+    if (!$station) {
+        return null;
+    }
+
+    $ttlSeconds = max(60, $ttlSeconds);
+    $requestedAt = new DateTimeImmutable('now');
+    $expiresAt = $requestedAt->modify('+' . $ttlSeconds . ' seconds');
+
+    $code = null;
+    for ($i = 0; $i < 5; $i += 1) {
+        $code = str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+        $check = $conn->prepare(
+            "SELECT pk_serialNumber FROM station WHERE registration_code = ? AND registration_expires_at > NOW() LIMIT 1"
+        );
+        if (!$check) {
+            return null;
+        }
+        $check->bind_param('s', $code);
+        $check->execute();
+        $exists = $check->get_result()->num_rows > 0;
+        $check->close();
+        if (!$exists) {
+            break;
+        }
+        $code = null;
+    }
+
+    if ($code === null) {
+        return null;
+    }
+
+    $token = bin2hex(random_bytes(32));
+    $stmt = $conn->prepare(
+        "UPDATE station
+         SET registration_code = ?,
+             registration_token = ?,
+             registration_requested_at = ?,
+             registration_expires_at = ?
+         WHERE pk_serialNumber = ?"
+    );
+    if (!$stmt) {
+        return null;
+    }
+    $requestedAtSql = $requestedAt->format('Y-m-d H:i:s');
+    $expiresAtSql = $expiresAt->format('Y-m-d H:i:s');
+    $stmt->bind_param('sssss', $code, $token, $requestedAtSql, $expiresAtSql, $serial);
+    $stmt->execute();
+    $ok = $stmt->affected_rows > 0;
+    $stmt->close();
+
+    if (!$ok) {
+        return null;
+    }
+
+    return [
+        'serial' => $serial,
+        'code' => $code,
+        'token' => $token,
+        'expires_at' => $expiresAtSql,
+        'expires_in' => $ttlSeconds,
+    ];
+}
+
+function registerStationByCode(mysqli $conn, string $code, string $username): ?string {
+    $code = trim($code);
+    if ($code === '') {
+        return null;
+    }
+
+    $stmt = $conn->prepare(
+        "SELECT pk_serialNumber
+         FROM station
+         WHERE registration_code = ? AND registration_expires_at > NOW()
+         LIMIT 1"
+    );
+    if (!$stmt) {
+        return null;
+    }
+    $stmt->bind_param('s', $code);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    if (!$row || empty($row['pk_serialNumber'])) {
+        return null;
+    }
+
+    $serial = (string)$row['pk_serialNumber'];
+    if (!registerStation($conn, $serial, $username)) {
+        return null;
+    }
+
+    $cleanup = $conn->prepare(
+        "UPDATE station
+         SET registration_code = NULL,
+             registration_requested_at = NULL
+         WHERE pk_serialNumber = ?"
+    );
+    if ($cleanup) {
+        $cleanup->bind_param('s', $serial);
+        $cleanup->execute();
+        $cleanup->close();
+    }
+
+    return $serial;
+}
+
+function getStationByRegistrationToken(mysqli $conn, string $token): ?array {
+    $token = trim($token);
+    if ($token === '') {
+        return null;
+    }
+
+    $stmt = $conn->prepare(
+        "SELECT s.pk_serialNumber,
+                s.registration_token,
+                s.registration_expires_at,
+                EXISTS (
+                    SELECT 1
+                    FROM ownership_history h
+                    WHERE h.fk_serialNumber = s.pk_serialNumber
+                      AND h.unregisteredAt IS NULL
+                ) AS is_registered
+         FROM station s
+         WHERE s.registration_token = ?
+         LIMIT 1"
+    );
+    if (!$stmt) {
+        return null;
+    }
+    $stmt->bind_param('s', $token);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    return $row ?: null;
+}
+
 function unregisterStation(mysqli $conn, string $serial, string $username): bool {
     $stmt = $conn->prepare(
         "UPDATE ownership_history

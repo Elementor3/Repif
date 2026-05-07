@@ -97,6 +97,8 @@ return [
     'created_by' => 'Created By',
     'registered_at' => 'Registered At',
     'register_station' => 'Register Station',
+    'station_registration_code' => 'Registration code',
+    'station_registration_code_placeholder' => 'Enter registration code',
     'unregister' => 'Unregister',
     'current_stations' => 'Current Stations',
     'past_stations' => 'Past Stations',
