@@ -10,6 +10,17 @@ $msg = '';
 $err = '';
 $prefillCode = trim((string)($_GET['code'] ?? ''));
 
+// Автоматична реєстрація по GET-запиту (при переході з QR)
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && $prefillCode !== '') {
+    $serial = registerStationByCode($conn, $prefillCode, $username);
+    if ($serial !== null) {
+        $msg = t('success');
+        $prefillCode = ''; // очищаємо код, щоб модалка не відкривалась
+    } else {
+        $err = t('invalid_registration_code');
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
     $isAjax = isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower((string)$_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';

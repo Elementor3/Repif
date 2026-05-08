@@ -9,7 +9,8 @@ function isAdmin(): bool {
 
 function requireLogin(): void {
     if (!isLoggedIn()) {
-        header('Location: /auth/login.php');
+        $returnTo = urlencode($_SERVER['REQUEST_URI']);
+        header('Location: /auth/login.php?return_to=' . $returnTo);
         exit;
     }
 }

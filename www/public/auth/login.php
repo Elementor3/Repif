@@ -43,7 +43,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['locale'] = $user['locale'] ?? 'en';
             $_SESSION['theme'] = $user['theme'] ?? 'light';
             $_SESSION['avatar'] = $user['avatar'] ?? '';
-            header('Location: /user/dashboard.php');
+            
+            $returnTo = $_GET['return_to'] ?? '/user/dashboard.php';
+            if (strpos($returnTo, '/') !== 0) {
+                $returnTo = '/user/dashboard.php';
+            }
+            header('Location: ' . $returnTo);
             exit;
         } else {
             $error = t('invalid_credentials');
@@ -78,7 +83,7 @@ render_login:
                     <?php if ($error): ?>
                         <div class="alert alert-danger"><?= e($error) ?></div>
                     <?php endif; ?>
-                    <form method="post">
+                    <form method="post" action="?<?= http_build_query($_GET) ?>">
                         <div class="mb-3">
                             <label class="form-label"><?= t('username') ?></label>
                             <input type="text" name="username" class="form-control" required autofocus value="<?= e($_POST['username'] ?? '') ?>">
