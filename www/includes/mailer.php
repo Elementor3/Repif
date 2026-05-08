@@ -13,7 +13,47 @@ function loadPhpMailer(): bool {
         }
     }
 
-    return class_exists('PHPMailer\\PHPMailer\\PHPMailer');
+    // If autoloader/include didn't make PHPMailer available, attempt more diagnostics and direct includes.
+    if (class_exists('PHPMailer\\\\PHPMailer\\\\PHPMailer')) {
+        return true;
+    }
+
+    // Try explicit direct include if files are present (different layouts).
+    $pathsToTry = [
+        __DIR__ . '/../vendor/phpmailer/phpmailer/src/PHPMailer.php',
+        __DIR__ . '/../vendor/phpmailer/phpmailer/src/Exception.php',
+        __DIR__ . '/../vendor/phpmailer/phpmailer/src/SMTP.php',
+    ];
+
+    $allExist = true;
+    foreach ($pathsToTry as $p) {
+        if (!file_exists($p)) {
+            $allExist = false;
+            break;
+        }
+    }
+
+    if ($allExist) {
+        @require_once $pathsToTry[1];
+        @require_once $pathsToTry[0];
+        @require_once $pathsToTry[2];
+    }
+
+    if (class_exists('PHPMailer\\\\PHPMailer\\\\PHPMailer')) {
+        return true;
+    }
+
+    // Write diagnostics to error log for easier debugging in container.
+    $diag = [];
+    $diag[] = 'loadPhpMailer diagnostics:';
+    $diag[] = 'autoload_exists=' . (file_exists($autoload) ? '1' : '0') . ' path=' . $autoload;
+    foreach ($pathsToTry as $p) {
+        $diag[] = $p . '=' . (file_exists($p) ? '1' : '0');
+    }
+    error_log(implode(' | ', $diag));
+    @file_put_contents('/tmp/mail_debug.log', date('c') . ' - ' . implode(' | ', $diag) . "\n", FILE_APPEND);
+
+    return false;
 }
 
 function sendEmail(string $to, string $subject, string $htmlBody): bool {
@@ -54,9 +94,16 @@ function sendEmail(string $to, string $subject, string $htmlBody): bool {
         $mail->Body = $htmlBody;
         $mail->AltBody = trim(html_entity_decode(strip_tags($htmlBody), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
 
-        return $mail->send();
+        $sent = $mail->send();
+        if (!$sent) {
+            $err = 'Mail send failed: ' . ($mail->ErrorInfo ?? 'unknown');
+            error_log($err);
+            @file_put_contents('/tmp/mail_debug.log', date('c') . ' - ' . $err . "\n", FILE_APPEND);
+        }
+        return $sent;
     } catch (\Throwable $e) {
         error_log('Mail send failed: ' . $e->getMessage());
+        @file_put_contents('/tmp/mail_debug.log', date('c') . ' - Exception: ' . $e->getMessage() . "\n", FILE_APPEND);
         return false;
     }
 }

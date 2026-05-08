@@ -341,6 +341,7 @@ require_once __DIR__ . '/../../includes/header.php';
                     <div class="input-group">
                         <input type="text" name="email_change_code" class="form-control" placeholder="123456" required>
                         <button type="submit" class="btn btn-primary"><?= t('verify_email_button') ?></button>
+                        <button type="button" id="cancelEmailChangeBtn" class="btn btn-outline-secondary ms-2"><?= t('cancel') ?></button>
                     </div>
                 </form>
             </div>

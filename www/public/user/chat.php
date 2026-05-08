@@ -367,7 +367,7 @@ $renderSystemText = function (array $message): string {
                             <i class="bi bi-paperclip"></i>
                             <input type="file" id="chatFile" name="files[]" class="d-none" multiple>
                         </label>
-                        <button type="submit" class="btn btn-primary"><i class="bi bi-send"></i></button>
+                        <button type="submit" class="btn btn-primary" title="<?= e(t('send')) ?>"><i class="bi bi-send"></i></button>
                     </div>
                 </form>
             </div>

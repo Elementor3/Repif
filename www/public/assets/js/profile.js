@@ -235,6 +235,32 @@
                     }
                 });
             });
+
+            var cancelBtn = document.getElementById('cancelEmailChangeBtn');
+            if (cancelBtn) {
+                cancelBtn.addEventListener('click', function () {
+                    fetch('/user/profile.php', {
+                        method: 'POST',
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Accept': 'application/json',
+                            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+                        },
+                        body: new URLSearchParams({ action: 'cancel_email_change' })
+                    })
+                        .then(function (r) { return r.json(); })
+                        .then(function (data) {
+                            if (!data || !data.success) {
+                                showProfileFlash('error', (data && data.message) ? data.message : 'Error');
+                                return;
+                            }
+                            if (emailChangePendingBox) emailChangePendingBox.classList.add('d-none');
+                        })
+                        .catch(function () {
+                            showProfileFlash('error', 'Error');
+                        });
+                });
+            }
         }
 
         var changePasswordForm = document.getElementById('changePasswordForm');

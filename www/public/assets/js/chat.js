@@ -327,7 +327,7 @@
 			formHtml += '<input type="text" id="chatMsg" class="form-control" placeholder="' + esc(chatTypeMessageText) + '" value="' + esc(draftText || '') + '">';
 			formHtml += '<label class="btn btn-outline-secondary" title="' + esc(chatUploadFileText) + '">';
 			formHtml += '<i class="bi bi-paperclip"></i><input type="file" id="chatFile" name="files[]" class="d-none" multiple>';
-			formHtml += '</label><button type="submit" class="btn btn-primary"><i class="bi bi-send"></i></button>';
+			formHtml += '</label><button type="submit" class="btn btn-primary" title="Send"><i class="bi bi-send"></i></button>';
 			formHtml += '</div></form></div>';
 
 			$('#chatMain').html(headerHtml + '<div class="chat-messages" id="chatMessages">' + listHtml + '</div>' + formHtml);

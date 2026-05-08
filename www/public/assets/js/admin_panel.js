@@ -1757,11 +1757,11 @@ return '' +
 '<td>' + escapeHtmlAdmin(station || '-') + '</td>' +
 '<td>' + escapeHtmlAdmin((start || '-') + ' - ' + (end || '-')) + '</td>' +
 '<td>' +
-'<a href="' + escapeHtmlAdmin(measurementsUrl) + '" class="btn btn-sm btn-outline-secondary me-1"><i class="bi bi-eye"></i></a>' +
+'<a href="' + escapeHtmlAdmin(measurementsUrl) + '" class="btn btn-sm btn-outline-secondary me-1" title="View Measurements"><i class="bi bi-eye"></i></a>' +
 '<form method="post" class="d-inline">' +
 '<input type="hidden" name="action" value="remove_collection_slot_admin">' +
 '<input type="hidden" name="sample_id" value="' + escapeHtmlAdmin(String(sampleId)) + '">' +
-'<button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-x-circle"></i></button>' +
+'<button type="submit" class="btn btn-sm btn-outline-danger" title="Delete"><i class="bi bi-x-circle"></i></button>' +
 '</form>' +
 '</td>' +
 '</tr>';

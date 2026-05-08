@@ -97,8 +97,8 @@ $(function () {
             incomingHtml += '<div class="flex-grow-1"><div class="fw-semibold">' + esc((r.firstName || '') + ' ' + (r.lastName || '')) + '</div><small class="text-muted d-block">@' + esc(r.pk_username) + '</small><small class="text-muted">' + esc(formatEuDateFromSql(r.createdAt)) + '</small></div>';
             incomingHtml += '<div class="d-flex align-items-center gap-1">';
             incomingHtml += '<a href="/user/view_profile.php?user=' + encodeURIComponent(r.pk_username) + '&back=' + backToFriends + '" class="btn btn-sm btn-outline-secondary" title="' + esc($friendsResults.data('view-profile-label')) + '"><i class="bi bi-person"></i></a>';
-            incomingHtml += '<button type="button" class="btn btn-sm btn-outline-success js-incoming-action" data-action="accept" data-request-id="' + Number(r.pk_requestID) + '"><i class="bi bi-check-lg"></i></button>';
-            incomingHtml += '<button type="button" class="btn btn-sm btn-outline-danger js-incoming-action" data-action="reject" data-request-id="' + Number(r.pk_requestID) + '"><i class="bi bi-x-lg"></i></button>';
+            incomingHtml += '<button type="button" class="btn btn-sm btn-outline-success js-incoming-action" data-action="accept" data-request-id="' + Number(r.pk_requestID) + '" title="' + escapeHtml(i18n.acceptLabel || 'Accept') + '"><i class="bi bi-check-lg"></i></button>';
+            incomingHtml += '<button type="button" class="btn btn-sm btn-outline-danger js-incoming-action" data-action="reject" data-request-id="' + Number(r.pk_requestID) + '" title="' + escapeHtml(i18n.rejectLabel || 'Reject') + '"><i class="bi bi-x-lg"></i></button>';
             incomingHtml += '</div></div>';
         });
 
