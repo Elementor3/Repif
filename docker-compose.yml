@@ -14,6 +14,7 @@ services:
       DB_PASS: ${DB_PASS}
       MAIL_HOST: mailhog
       MAIL_PORT: 1025
+      APP_URL: http://192.168.1.155
     depends_on:
       - db
     restart: unless-stopped
