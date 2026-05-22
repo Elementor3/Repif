@@ -1,4 +1,4 @@
-</div><!-- /.container -->
+</div>
 <footer class="text-center text-muted py-4 mt-5 border-top">
     <small>&copy; <?= date('Y') ?> WeatherStation</small>
 </footer>

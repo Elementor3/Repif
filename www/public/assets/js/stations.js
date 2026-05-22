@@ -1,4 +1,3 @@
-/* global bootstrap */
 (function () {
 	var autosaveTimer = null;
 	var lastSavedPayload = null;

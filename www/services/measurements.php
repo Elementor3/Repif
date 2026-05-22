@@ -172,57 +172,46 @@ function getLatestMeasurementByStation(mysqli $conn, string $stationSerial): ?ar
 
 function getChartData(mysqli $conn, array $filters): array {
     [$where, $types, $params] = buildMeasurementWhere($filters);
-    $chartLimit = isset($filters['chart_limit']) ? (int)$filters['chart_limit'] : 250;
-    if ($chartLimit < 50) {
-        $chartLimit = 50;
-    }
-    if ($chartLimit > 1000) {
-        $chartLimit = 1000;
-    }
-
     $allowedMetrics = ['temperature', 'airPressure', 'lightIntensity', 'airQuality'];
     $metric = $filters['metric'] ?? '';
     $metric = in_array($metric, $allowedMetrics, true) ? $metric : '';
+
+    $stationNameExpr = "COALESCE(
+        NULLIF((SELECT h1.name
+                FROM ownership_history h1
+                WHERE h1.fk_serialNumber = m.fk_station
+                  AND h1.fk_ownerId = m.fk_ownerId
+                ORDER BY h1.registeredAt DESC, h1.pk_id DESC
+                LIMIT 1), ''),
+        m.fk_station
+    )";
+    $ownerNameExpr = "COALESCE(
+        NULLIF(TRIM(CONCAT_WS(' ', ou.firstName, ou.lastName)), ''),
+        ou.pk_username,
+        m.fk_ownerId
+    )";
 
     $metricSelect = $metric
         ? "m.$metric AS metric_value"
         : "m.temperature, m.airPressure, m.lightIntensity, m.airQuality";
 
-    // Take newest points first for responsiveness, then sort ascending for chart rendering.
-    $sql = "SELECT recent.*
-            FROM (
-                SELECT m.pk_measurementID,
-                       m.timestamp,
-                       m.fk_station,
-                       m.fk_ownerId,
-                                             COALESCE(
-                                                     NULLIF((SELECT h1.name
-                                                                     FROM ownership_history h1
-                                                                     WHERE h1.fk_serialNumber = m.fk_station
-                                                                         AND h1.fk_ownerId = m.fk_ownerId
-                                                                     ORDER BY h1.registeredAt DESC, h1.pk_id DESC
-                                                                     LIMIT 1), ''),
-                                                     m.fk_station
-                                             ) AS station_name,
-                       COALESCE(
-                           NULLIF(TRIM(CONCAT_WS(' ', ou.firstName, ou.lastName)), ''),
-                           ou.pk_username,
-                           m.fk_ownerId
-                       ) AS owner_name,
-                       $metricSelect
-                FROM measurement m
-                LEFT JOIN user ou ON ou.pk_username = m.fk_ownerId
-                $where
-                ORDER BY m.timestamp DESC
-                LIMIT ?
-            ) AS recent
-            ORDER BY recent.timestamp ASC";
-    $stmt = $conn->prepare($sql);
-    $allTypes = $types . 'i';
-    $allParams = array_merge($params, [$chartLimit]);
-    $stmt->bind_param($allTypes, ...$allParams);
-    $stmt->execute();
-    return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $rawSql = "SELECT m.pk_measurementID,
+                      m.timestamp,
+                      m.fk_station,
+                      m.fk_ownerId,
+                      $stationNameExpr AS station_name,
+                      $ownerNameExpr AS owner_name,
+                      $metricSelect
+               FROM measurement m
+               LEFT JOIN user ou ON ou.pk_username = m.fk_ownerId
+               $where
+               ORDER BY m.timestamp ASC";
+    $rawStmt = $conn->prepare($rawSql);
+    if ($types && $params) {
+        $rawStmt->bind_param($types, ...$params);
+    }
+    $rawStmt->execute();
+    return $rawStmt->get_result()->fetch_all(MYSQLI_ASSOC);
 }
 
 function getOwnershipHistoryByStationSerials(mysqli $conn, array $stationSerials): array {

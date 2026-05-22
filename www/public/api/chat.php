@@ -27,10 +27,10 @@ function iniSizeToBytes(string $size): int {
     switch ($unit) {
         case 'g':
             $value *= 1024;
-            // no break
+            
         case 'm':
             $value *= 1024;
-            // no break
+            
         case 'k':
             $value *= 1024;
             break;
@@ -78,7 +78,6 @@ if ($action === 'send') {
         exit;
     }
 
-    // Проверяем, что пользователь участник беседы
     if (!isParticipant($conn, $convId, $username)) {
         echo json_encode(['success' => false, 'message' => t('not_authorized')]);
         exit;
@@ -171,7 +170,6 @@ if ($action === 'send') {
 
     $conn->begin_transaction();
     try {
-        // Keep file-only sends compatible with schemas where message is NOT NULL.
         $msgId = sendMessage($conn, $convId, $username, $message);
         if ($msgId <= 0) {
             $dbError = trim((string)$conn->error);
@@ -483,7 +481,6 @@ if ($action === 'send') {
                     updateGroupConversationAvatar($conn, $convId, $avatarValue);
                 }
             } catch (Throwable $e) {
-                // Ignore avatar errors on create to keep group creation successful.
             }
         }
     }

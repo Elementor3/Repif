@@ -139,7 +139,6 @@ function initMeasurementsClient() {
                 try {
                     $input.datetimepicker('show');
                 } catch (e) {
-                    // Keep focus fallback when explicit show is unavailable.
                 }
             }
         });
@@ -1428,6 +1427,31 @@ function initMeasurementsClient() {
         }
     };
 
+    function getDecimationSamples(chart) {
+        var width = 0;
+        if (chart && chart.width) {
+            width = chart.width;
+        } else {
+            var canvas = document.getElementById('measurementMetricChartCanvas');
+            if (canvas) {
+                width = canvas.clientWidth || canvas.width || 0;
+            }
+        }
+
+        if (!width) {
+            return 120;
+        }
+
+        var samples = Math.round(width * 1.5);
+        if (samples < 120) {
+            samples = 120;
+        }
+        if (samples > 2000) {
+            samples = 2000;
+        }
+        return samples;
+    }
+
     function ensureChartInstance() {
         if (typeof Chart === 'undefined') {
             return null;
@@ -1725,6 +1749,9 @@ function initMeasurementsClient() {
         chartHoveredOwnershipTransition = null;
         setOwnershipHoverInfo(null);
         chart.options.scales.y.title.text = chartConfig.yTitle;
+        if (chart.options.plugins && chart.options.plugins.decimation) {
+            chart.options.plugins.decimation.samples = getDecimationSamples(chart);
+        }
         chart.options.scales.x.ticks.maxTicksLimit = isMobileView() ? 5 : 8;
         chart.options.scales.x.ticks.font.size = isMobileView() ? 10 : 12;
         chart.options.plugins.legend.maxHeight = isMobileView() ? 120 : 90;
@@ -1757,7 +1784,6 @@ function initMeasurementsClient() {
         var params = getFilterParams();
         params.set('action', 'chart');
         params.set('metric', selectedChartMetric);
-        params.set('chart_limit', '120');
         params.set('_ts', Date.now());
 
         try {
@@ -2328,7 +2354,6 @@ function initMeasurementsClient() {
                 refreshChartsIfVisible();
             }
 
-            // Hidden-tab rendering race fallback: retry once shortly after tab is visible.
             setTimeout(function () {
                 if (isChartsTabActive()) {
                     if (!chartDataLoaded[selectedChartMetric]) {

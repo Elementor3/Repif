@@ -36,7 +36,6 @@ function sendEmail(string $to, string $subject, string $htmlBody): bool {
         $mail->Password = $mailPassword;
         $mail->SMTPSecure = 'tls';
 
-        // MailHog typically runs without TLS/auth
         if ((defined('MAIL_PORT') ? (int)MAIL_PORT : 1025) === 1025) {
             $mail->SMTPAutoTLS = false;
             $mail->SMTPSecure = '';

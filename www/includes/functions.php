@@ -62,19 +62,9 @@ function getAllowedAvatarExtensions(): array {
     return ['svg', 'png', 'jpg', 'jpeg', 'webp', 'avif'];
 }
 
-function getPresetAvatarFiles(?string $presetsDir = null): array {
+function getPresetAvatarFiles(): array {
     $allowedExt = array_map('strtolower', getAllowedAvatarExtensions());
-    $searchDirs = [];
-    if ($presetsDir !== null && trim($presetsDir) !== '') {
-        $searchDirs[] = (string)$presetsDir;
-    }
-
-    // Current project layout keeps stock avatars under /public/assets/avatars.
-    $searchDirs[] = __DIR__ . '/../public/assets/avatars';
-
-    // Legacy fallbacks kept for compatibility with older layouts.
-    $searchDirs[] = __DIR__ . '/../assets/avatars';
-    $searchDirs[] = __DIR__ . '/../assets/avatars/presets';
+    $searchDirs = [__DIR__ . '/../public/assets/avatars'];
 
     $avatars = [];
     foreach ($searchDirs as $dir) {
@@ -94,10 +84,6 @@ function getPresetAvatarFiles(?string $presetsDir = null): array {
             }
         }
 
-        // Prefer the first existing directory with avatars.
-        if (!empty($avatars)) {
-            break;
-        }
     }
 
     $files = array_keys($avatars);

@@ -203,7 +203,6 @@
                 try {
                     $input.datetimepicker('show');
                 } catch (e) {
-                    // Fallback to focus only when show method is unavailable.
                 }
             }
         });
@@ -266,7 +265,6 @@
         try {
             sessionStorage.setItem(key, JSON.stringify(payload));
         } catch (e) {
-            // Ignore storage write issues.
         }
     }
 

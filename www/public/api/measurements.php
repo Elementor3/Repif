@@ -119,7 +119,6 @@ if ($action === 'chart' || $action === 'poll') {
             $filters['metric'] = $metric;
         }
 
-        $filters['chart_limit'] = (int)($_GET['chart_limit'] ?? 120);
         $data = getChartData($conn, $filters);
         $stationSerialsForChart = array_values(array_unique(array_filter(array_map(static fn($row) => (string)($row['fk_station'] ?? ''), $data), static fn($s) => $s !== '')));
         $ownershipMap = getOwnershipHistoryByStationSerials($conn, $stationSerialsForChart);
@@ -148,7 +147,6 @@ if ($action === 'chart' || $action === 'poll') {
     $includeChart = isset($_GET['include_chart']) && (string)$_GET['include_chart'] === '1';
     $chart = [];
     if ($includeChart) {
-        $filters['chart_limit'] = (int)($_GET['chart_limit'] ?? 250);
         $chart = getChartData($conn, $filters);
     }
 

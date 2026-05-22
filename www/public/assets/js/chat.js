@@ -254,9 +254,9 @@
 				html += '</div>';
 			}
 			html += '<div class="bubble">';
-				if (m.message) {
-					html += esc(m.message);
-				}
+			if (m.message) {
+				html += esc(m.message);
+			}
 
 			var attachments = Array.isArray(m.attachments) ? m.attachments : [];
 			if (attachments.length) {
@@ -870,7 +870,7 @@
 						html += '</div></div>';
 					});
 					$('#searchResults').removeClass('d-none').html(html);
-				}, 'json').fail(function () {});
+				}, 'json').fail(function () { });
 			}, 120);
 		});
 

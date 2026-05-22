@@ -52,7 +52,6 @@ switch ($action) {
         if (!$username || !$firstName || !$lastName || !$email) {
             echo json_encode(['success' => false, 'message' => 'Missing fields']); exit;
         }
-        // Cannot demote last admin
         if ($role !== 'Admin') {
             $result = $conn->query("SELECT COUNT(*) AS cnt FROM user WHERE role='Admin'");
             $adminCount = (int)$result->fetch_assoc()['cnt'];
@@ -182,7 +181,7 @@ switch ($action) {
         echo json_encode(['success' => (bool)$post, 'post' => $post]);
         break;
 
-    // --- COLLECTIONS (admin view) ---
+    // --- COLLECTIONS ---
     case 'delete_collection':
         require_once __DIR__ . '/../../services/collections.php';
         $id = (int)($_POST['id'] ?? 0);
@@ -190,7 +189,7 @@ switch ($action) {
         echo json_encode(['success' => $ok]);
         break;
 
-    // --- MEASUREMENTS (admin) ---
+    // --- MEASUREMENTS ---
     case 'delete_measurement':
         $id = (int)($_POST['id'] ?? 0);
         $stmt = $conn->prepare("DELETE FROM measurement WHERE pk_measurementID=?");

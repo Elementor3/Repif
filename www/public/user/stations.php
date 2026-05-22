@@ -34,8 +34,7 @@ function saveStationCodeState(string $username, array $state): void {
         'blocked_until' => (int)($state['blocked_until'] ?? 0),
     ];
 }
-
-// Автоматична реєстрація по GET-запиту (при переході з QR)
+// Handle prefill code from GET parameter
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && $prefillCode !== '') {
     if (stationCodeIsBlocked($stationCodeState)) {
         $err = stationCodeLockMessage((int)$stationCodeState['blocked_until']);
@@ -44,7 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $prefillCode !== '') {
         $serial = registerStationByCode($conn, $prefillCode, $username);
         if ($serial !== null) {
             $msg = t('success');
-            $prefillCode = ''; // очищаємо код, щоб модалка не відкривалась
+            $prefillCode = ''; 
             $stationCodeState = ['count' => 0, 'blocked_until' => 0];
             saveStationCodeState($username, $stationCodeState);
         } else {

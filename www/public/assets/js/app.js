@@ -1,5 +1,4 @@
 $(function () {
-    // Auto-dismiss alerts after 5 seconds
     setTimeout(function () {
         $('.auto-dismiss').fadeOut('slow', function () { $(this).remove(); });
     }, 5000);
@@ -10,7 +9,7 @@ $(function () {
         var next = current === 'dark' ? 'light' : 'dark';
         var $themeIcon = $('#themeIcon');
 
-        // Apply theme instantly in UI, then persist preference on backend.
+      
         $('html').attr('data-bs-theme', next);
         var iconClass = next === 'dark' ? 'bi-sun-fill' : 'bi-moon-fill';
         if ($themeIcon.length) {
@@ -182,7 +181,7 @@ $(function () {
         fitNavbarTimer = setTimeout(fitNavbarIdentityName, 80);
     });
 
-    // Notification poll
+
     function loadNotifications() {
         $.get('/api/notifications.php', { action: 'get_count' }, function (res) {
             if (res.success) {
@@ -257,7 +256,7 @@ $(function () {
             loadNotificationList();
         });
 
-        // Клик по уведомлению: mark read + get full + modal
+        
         $(document).on('click', '.notif-item', function () {
             var $item = $(this);
             var id = $item.data('id');
@@ -279,7 +278,7 @@ $(function () {
             });
         });
 
-        // Mark all read: только read, без удаления
+       
         $('#markAllReadBtn').on('click', function (e) {
             e.preventDefault();
             $.post('/api/notifications.php', { action: 'mark_all_read' }, function (res) {
@@ -290,7 +289,7 @@ $(function () {
             }, 'json');
         });
 
-        // Clear: удаляет все уведомления текущего пользователя
+     
         $('#clearNotifBtn').on('click', function (e) {
             e.preventDefault();
             $.post('/api/notifications.php', { action: 'clear_all' }, function (res) {
@@ -305,7 +304,7 @@ $(function () {
             });
         });
 
-        // Delete one notification from list
+        
         $(document).on('click', '.notif-delete-btn', function (e) {
             e.preventDefault();
             e.stopPropagation();

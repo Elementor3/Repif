@@ -10,7 +10,6 @@ requireLogin();
 
 $username = $_SESSION['username'];
 
-// Stats
 $myStations = getUserStationsList($conn, $username);
 $myCollections = getUserCollections($conn, $username);
 $myFriends = getFriends($conn, $username);

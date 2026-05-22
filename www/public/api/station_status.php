@@ -48,7 +48,6 @@ $response = [
     'registered' => $registered,
 ];
 
-// Add owner information if registered
 if ($registered && $ownership !== null) {
     $username = (string)($ownership['fk_ownerId'] ?? $ownership['fk_registeredBy'] ?? '');
     if ($username !== '') {
