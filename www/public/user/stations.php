@@ -6,19 +6,64 @@ require_once __DIR__ . '/../../services/stations.php';
 requireLogin();
 
 $username = $_SESSION['username'];
+$stationCodeMaxAttempts = 3;
+$stationCodeBlockSeconds = 5 * 60;
+$stationCodeLimits = $_SESSION['station_code_limits'] ?? [];
+$stationCodeState = is_array($stationCodeLimits[$username] ?? null)
+    ? $stationCodeLimits[$username]
+    : ['count' => 0, 'blocked_until' => 0];
+$stationCodeState['count'] = (int)($stationCodeState['count'] ?? 0);
+$stationCodeState['blocked_until'] = (int)($stationCodeState['blocked_until'] ?? 0);
 $msg = '';
 $err = '';
 $prefillCode = trim((string)($_GET['code'] ?? ''));
+$prefillError = '';
+
+function stationCodeIsBlocked(array $state): bool {
+    return (int)($state['blocked_until'] ?? 0) > time();
+}
+
+function stationCodeLockMessage(int $blockedUntil): string {
+    $remaining = max(1, (int)ceil(($blockedUntil - time()) / 60));
+    return sprintf(t('station_code_locked'), $remaining);
+}
+
+function saveStationCodeState(string $username, array $state): void {
+    $_SESSION['station_code_limits'][$username] = [
+        'count' => (int)($state['count'] ?? 0),
+        'blocked_until' => (int)($state['blocked_until'] ?? 0),
+    ];
+}
 
 // Автоматична реєстрація по GET-запиту (при переході з QR)
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && $prefillCode !== '') {
-    $serial = registerStationByCode($conn, $prefillCode, $username);
-    if ($serial !== null) {
-        $msg = t('success');
-        $prefillCode = ''; // очищаємо код, щоб модалка не відкривалась
+    if (stationCodeIsBlocked($stationCodeState)) {
+        $err = stationCodeLockMessage((int)$stationCodeState['blocked_until']);
+        $prefillError = $err;
     } else {
-        $err = t('invalid_registration_code');
+        $serial = registerStationByCode($conn, $prefillCode, $username);
+        if ($serial !== null) {
+            $msg = t('success');
+            $prefillCode = ''; // очищаємо код, щоб модалка не відкривалась
+            $stationCodeState = ['count' => 0, 'blocked_until' => 0];
+            saveStationCodeState($username, $stationCodeState);
+        } else {
+            $stationCodeState['count'] += 1;
+            if ($stationCodeState['count'] >= $stationCodeMaxAttempts) {
+                $stationCodeState['count'] = 0;
+                $stationCodeState['blocked_until'] = time() + $stationCodeBlockSeconds;
+                $err = stationCodeLockMessage((int)$stationCodeState['blocked_until']);
+            } else {
+                $err = t('invalid_registration_code');
+            }
+            saveStationCodeState($username, $stationCodeState);
+            $prefillError = $err;
+        }
     }
+}
+
+if ($prefillError !== '') {
+    $err = '';
 }
 
 if (
@@ -61,37 +106,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $isAjax = isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower((string)$_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
 
     if ($action === 'register') {
-        $code = trim($_POST['code'] ?? '');
-        if ($code !== '') {
-            $serial = registerStationByCode($conn, $code, $username);
-            if ($serial !== null) {
-                $msg = t('success');
-                if ($isAjax) {
-                    $activeRow = getUserActiveStationOwnershipBySerial($conn, $serial, $username);
-                    header('Content-Type: application/json');
-                    echo json_encode([
-                        'success' => true,
-                        'data' => [
-                            'serial' => (string)($activeRow['pk_serialNumber'] ?? $serial),
-                            'name' => (string)($activeRow['name'] ?? $serial),
-                            'description' => (string)($activeRow['description'] ?? ''),
-                            'registeredAt' => (string)($activeRow['registeredAt'] ?? ''),
-                        ],
-                    ]);
-                    exit;
-                }
-            } else {
-                $err = t('invalid_registration_code');
-                if ($isAjax) {
-                    header('Content-Type: application/json');
-                    echo json_encode(['success' => false, 'message' => t('invalid_registration_code')]);
-                    exit;
-                }
+        if (stationCodeIsBlocked($stationCodeState)) {
+            $err = stationCodeLockMessage((int)$stationCodeState['blocked_until']);
+            if ($isAjax) {
+                header('Content-Type: application/json');
+                echo json_encode(['success' => false, 'message' => $err]);
+                exit;
             }
-        } elseif ($isAjax) {
-            header('Content-Type: application/json');
-            echo json_encode(['success' => false, 'message' => t('invalid_registration_code')]);
-            exit;
+        } else {
+            $code = trim($_POST['code'] ?? '');
+            if ($code !== '') {
+                $serial = registerStationByCode($conn, $code, $username);
+                if ($serial !== null) {
+                    $stationCodeState = ['count' => 0, 'blocked_until' => 0];
+                    saveStationCodeState($username, $stationCodeState);
+                    $msg = t('success');
+                    if ($isAjax) {
+                        $activeRow = getUserActiveStationOwnershipBySerial($conn, $serial, $username);
+                        header('Content-Type: application/json');
+                        echo json_encode([
+                            'success' => true,
+                            'data' => [
+                                'serial' => (string)($activeRow['pk_serialNumber'] ?? $serial),
+                                'name' => (string)($activeRow['name'] ?? $serial),
+                                'description' => (string)($activeRow['description'] ?? ''),
+                                'registeredAt' => (string)($activeRow['registeredAt'] ?? ''),
+                            ],
+                        ]);
+                        exit;
+                    }
+                } else {
+                    $stationCodeState['count'] += 1;
+                    if ($stationCodeState['count'] >= $stationCodeMaxAttempts) {
+                        $stationCodeState['count'] = 0;
+                        $stationCodeState['blocked_until'] = time() + $stationCodeBlockSeconds;
+                        $err = stationCodeLockMessage((int)$stationCodeState['blocked_until']);
+                    } else {
+                        $err = t('invalid_registration_code');
+                    }
+                    saveStationCodeState($username, $stationCodeState);
+                    if ($isAjax) {
+                        header('Content-Type: application/json');
+                        echo json_encode(['success' => false, 'message' => $err]);
+                        exit;
+                    }
+                }
+            } elseif ($isAjax) {
+                header('Content-Type: application/json');
+                echo json_encode(['success' => false, 'message' => t('invalid_registration_code')]);
+                exit;
+            }
         }
     } elseif ($action === 'update') {
         $serial = trim($_POST['serial'] ?? '');
@@ -222,6 +286,7 @@ $currentPageUrl = (string)($_SERVER['REQUEST_URI'] ?? '/user/stations.php');
     data-default-error="<?= e(t('error_occurred')) ?>"
     data-return-to="<?= e($currentPageUrl) ?>"
     data-prefill-code="<?= e($prefillCode) ?>"
+    data-prefill-error="<?= e($prefillError) ?>"
 ></div>
 
 <h5 class="mb-3"><?= e(t('current_stations')) ?></h5>

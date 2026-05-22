@@ -109,10 +109,13 @@
 	function showAlert(message, type, preferredModalId) {
 		var target = getAlertTarget(preferredModalId);
 		renderAlertTo(target, message, type);
+	}
 
-		if (alertsEl && target !== alertsEl) {
-			renderAlertTo(alertsEl, message, type);
+	function safeClosest(target, selector) {
+		if (!target || typeof target.closest !== 'function') {
+			return null;
 		}
+		return target.closest(selector);
 	}
 
 	function clearAlerts(preferredModalId) {
@@ -470,7 +473,7 @@
 	}
 
 	document.addEventListener('click', function (e) {
-		var btn = e.target.closest('.js-edit-station');
+		var btn = safeClosest(e.target, '.js-edit-station');
 		if (!btn) {
 			return;
 		}
@@ -484,7 +487,7 @@
 	});
 
 	document.addEventListener('input', function (e) {
-		if (!e.target || !e.target.closest('#editModal')) {
+		if (!safeClosest(e.target, '#editModal')) {
 			return;
 		}
 		if (e.target.id === 'editName' || e.target.id === 'editDesc') {
@@ -493,7 +496,7 @@
 	});
 
 	document.addEventListener('blur', function (e) {
-		if (!e.target || !e.target.closest('#editModal')) {
+		if (!safeClosest(e.target, '#editModal')) {
 			return;
 		}
 		if (e.target.id === 'editName' || e.target.id === 'editDesc') {
@@ -503,7 +506,7 @@
 
 	document.addEventListener('submit', function (e) {
 		var form = e.target;
-		if (form && form.closest('#editModal form')) {
+		if (form && typeof form.closest === 'function' && form.closest('#editModal form')) {
 			e.preventDefault();
 			saveStationEdits();
 			return;
@@ -540,7 +543,7 @@
 					clearAlerts();
 				})
 				.catch(function (err) {
-					showAlert(err && err.message ? err.message : i18n.defaultError, 'danger', 'editModal');
+					showAlert(err && err.message ? err.message : i18n.defaultError, 'danger', 'registerModal');
 				});
 			return;
 		}
@@ -592,6 +595,7 @@
 	}
 
 	var prefillCode = i18nEl ? (i18nEl.getAttribute('data-prefill-code') || '') : '';
+	var prefillError = i18nEl ? (i18nEl.getAttribute('data-prefill-error') || '') : '';
 	if (prefillCode) {
 		var registerForm = document.getElementById('registerStationForm');
 		var codeInput = registerForm ? registerForm.querySelector('input[name="code"]') : null;
@@ -600,6 +604,9 @@
 		}
 		if (registerModalEl) {
 			bootstrap.Modal.getOrCreateInstance(registerModalEl).show();
+		}
+		if (prefillError) {
+			showAlert(prefillError, 'danger', 'registerModal');
 		}
 	}
 

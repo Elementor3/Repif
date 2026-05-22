@@ -155,6 +155,7 @@ return [
     'registration_code_expire_hint' => 'Код дійсний 5 хвилин.',
     'registration_code_sent' => 'Код підтвердження надіслано на вашу пошту.',
     'invalid_registration_code' => 'Недійсний або прострочений код підтвердження.',
+    'station_code_locked' => 'Забагато спроб. Спробуйте знову через %d хв.',
     'email_change_relogin_warning' => 'Якщо змінити email, дії в профілі будуть заблоковані до підтвердження коду з листа. Продовжити?',
     'profile_email_change_code_subject' => 'Підтвердіть нову електронну адресу',
     'profile_email_change_code_message' => 'Введіть цей код на сторінці профілю, щоб підтвердити нову електронну адресу.',

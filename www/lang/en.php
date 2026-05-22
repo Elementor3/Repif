@@ -155,6 +155,7 @@ return [
     'registration_code_expire_hint' => 'This code expires in 5 minutes.',
     'registration_code_sent' => 'Verification code sent to your email.',
     'invalid_registration_code' => 'Invalid or expired verification code.',
+    'station_code_locked' => 'Too many attempts. Try again in %d min.',
     'email_change_relogin_warning' => 'If you change email, profile actions will be blocked until you confirm the code from email. Continue?',
     'profile_email_change_code_subject' => 'Confirm your new email address',
     'profile_email_change_code_message' => 'Enter this code on your profile page to confirm the new email address.',
