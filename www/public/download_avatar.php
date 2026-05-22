@@ -3,8 +3,6 @@ require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../services/users.php';
 
-requireLogin();
-
 $targetUsername = trim((string)($_GET['user'] ?? ''));
 if ($targetUsername === '') {
     http_response_code(400);

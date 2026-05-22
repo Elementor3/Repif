@@ -2,6 +2,9 @@
 (function () {
 	var autosaveTimer = null;
 	var lastSavedPayload = null;
+	var stationsRefreshTimer = null;
+	var stationsRefreshInFlight = false;
+	var stationsRefreshSignature = '';
 	var i18nEl = document.getElementById('stationsClientI18n');
 	var alertsEl = document.getElementById('stationsAjaxAlerts');
 	var i18n = {
@@ -153,6 +156,77 @@
 		if (pastWrap && pastEmpty) {
 			pastEmpty.classList.toggle('d-none', pastWrap.children.length > 0);
 		}
+	}
+
+	function renderStationsGrid(containerId, items, builder) {
+		var wrap = document.getElementById(containerId);
+		if (!wrap) {
+			return;
+		}
+
+		if (!Array.isArray(items) || items.length === 0) {
+			wrap.innerHTML = '';
+			return;
+		}
+
+		wrap.innerHTML = items.map(function (item) {
+			return builder(item);
+		}).join('');
+	}
+
+	function refreshStationsList(silent) {
+		if (stationsRefreshInFlight) {
+			return Promise.resolve();
+		}
+
+		stationsRefreshInFlight = true;
+		return fetch('/user/stations.php?ajax=refresh', {
+			method: 'GET',
+			headers: {
+				'X-Requested-With': 'XMLHttpRequest'
+			},
+			credentials: 'same-origin'
+		})
+			.then(function (res) {
+				if (!res.ok) {
+					throw new Error('Refresh failed');
+				}
+				return res.json();
+			})
+			.then(function (res) {
+				if (!res || !res.success || !res.data) {
+					throw new Error((res && res.message) || i18n.defaultError);
+				}
+
+				var signature = JSON.stringify(res.data);
+				if (signature !== stationsRefreshSignature) {
+					renderStationsGrid('stationsCardsGrid', res.data.stations || [], buildActiveCard);
+					renderStationsGrid('pastStationsCardsGrid', res.data.pastStations || [], buildPastCard);
+					stationsRefreshSignature = signature;
+				}
+
+				updateEmptyState();
+				if (!silent) {
+					clearAlerts();
+				}
+			})
+			.catch(function (err) {
+				if (!silent) {
+					showAlert(err && err.message ? err.message : i18n.defaultError, 'danger');
+				}
+			})
+			.finally(function () {
+				stationsRefreshInFlight = false;
+			});
+	}
+
+	function scheduleStationsRefresh(immediate) {
+		if (stationsRefreshTimer) {
+			clearTimeout(stationsRefreshTimer);
+		}
+		stationsRefreshTimer = setTimeout(function () {
+			refreshStationsList(true);
+		}, immediate ? 0 : 250);
 	}
 
 	function insertCard(containerId, html, sortByName) {
@@ -528,6 +602,19 @@
 			bootstrap.Modal.getOrCreateInstance(registerModalEl).show();
 		}
 	}
+
+	refreshStationsList(true);
+	window.setInterval(function () {
+		refreshStationsList(true);
+	}, 15000);
+	window.addEventListener('focus', function () {
+		scheduleStationsRefresh(true);
+	});
+	document.addEventListener('visibilitychange', function () {
+		if (!document.hidden) {
+			scheduleStationsRefresh(true);
+		}
+	});
 
 	updateEmptyState();
 	window.editStation = editStation;

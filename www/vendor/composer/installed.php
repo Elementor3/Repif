@@ -1,9 +1,9 @@
 <?php return array(
     'root' => array(
         'name' => '__root__',
-        'pretty_version' => 'dev-migration/public-root',
-        'version' => 'dev-migration/public-root',
-        'reference' => 'a6ad1822be65159dd31dbde1318fd74804590ba6',
+        'pretty_version' => 'dev-main',
+        'version' => 'dev-main',
+        'reference' => '981a595cb175f5c789599b8a97e8f600f5dabc9c',
         'type' => 'library',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
@@ -11,9 +11,9 @@
     ),
     'versions' => array(
         '__root__' => array(
-            'pretty_version' => 'dev-migration/public-root',
-            'version' => 'dev-migration/public-root',
-            'reference' => 'a6ad1822be65159dd31dbde1318fd74804590ba6',
+            'pretty_version' => 'dev-main',
+            'version' => 'dev-main',
+            'reference' => '981a595cb175f5c789599b8a97e8f600f5dabc9c',
             'type' => 'library',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),

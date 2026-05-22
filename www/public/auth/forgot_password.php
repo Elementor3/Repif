@@ -14,7 +14,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $user = getUserByEmail($conn, $email);
         if ($user) {
             $token = bin2hex(random_bytes(32));
-            $expires = date('Y-m-d H:i:s', strtotime('+1 hour'));
+            $expires = date('Y-m-d H:i:s', strtotime('+5 minutes'));
             $stmt = $conn->prepare("INSERT INTO password_reset (fk_user, token, expiresAt) VALUES (?,?,?)");
             $stmt->bind_param("sss", $user['pk_username'], $token, $expires);
             $stmt->execute();

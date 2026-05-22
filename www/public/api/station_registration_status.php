@@ -1,6 +1,20 @@
 <?php
 require_once __DIR__ . '/../../config/database.php';
+require_once __DIR__ . '/../../includes/functions.php';
 require_once __DIR__ . '/../../services/stations.php';
+require_once __DIR__ . '/../../services/users.php';
+
+function buildAbsoluteUrl(string $path): string {
+    $path = '/' . ltrim($path, '/');
+    $proto = (!empty($_SERVER['HTTP_X_FORWARDED_PROTO'])
+        ? strtolower((string)$_SERVER['HTTP_X_FORWARDED_PROTO'])
+        : (((string)($_SERVER['HTTPS'] ?? '') !== '' && (string)$_SERVER['HTTPS'] !== 'off') ? 'https' : 'http'));
+    $host = (string)($_SERVER['HTTP_X_FORWARDED_HOST'] ?? $_SERVER['HTTP_HOST'] ?? '');
+    if ($host === '') {
+        return $path;
+    }
+    return $proto . '://' . $host . $path;
+}
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 if (!in_array($method, ['GET', 'POST'], true)) {
@@ -66,8 +80,27 @@ if ($status !== 'pending' && $serial !== '') {
     }
 }
 
-echo json_encode([
+$response = [
     'success' => true,
     'status' => $status,
-    'serial' => $serial,
-]);
+];
+
+// Add owner information for registered status
+if ($status === 'registered' && $serial !== '') {
+    $ownership = getActiveStationOwnershipBySerial($conn, $serial);
+    if ($ownership !== null) {
+        $username = (string)($ownership['fk_ownerId'] ?? $ownership['fk_registeredBy'] ?? '');
+        if ($username !== '') {
+            $user = getUserByUsername($conn, $username);
+            if ($user !== null) {
+                $avatarPath = getAvatarUrl((string)($user['avatar'] ?? ''), $username);
+                $response['owner'] = [
+                    'username' => $username,
+                    'avatar' => $avatarPath ? buildAbsoluteUrl($avatarPath) : ''
+                ];
+            }
+        }
+    }
+}
+
+echo json_encode($response);

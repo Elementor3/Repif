@@ -21,6 +21,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $prefillCode !== '') {
     }
 }
 
+if (
+    $_SERVER['REQUEST_METHOD'] === 'GET'
+    && (string)($_GET['ajax'] ?? '') === 'refresh'
+    && isset($_SERVER['HTTP_X_REQUESTED_WITH'])
+    && strtolower((string)$_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest'
+) {
+    $stations = getUserStationsList($conn, $username);
+    $pastStations = getUserPastStationsList($conn, $username);
+
+    header('Content-Type: application/json');
+    echo json_encode([
+        'success' => true,
+        'data' => [
+            'stations' => array_map(static function (array $row): array {
+                return [
+                    'serial' => (string)($row['pk_serialNumber'] ?? ''),
+                    'name' => (string)($row['name'] ?? ''),
+                    'description' => (string)($row['description'] ?? ''),
+                    'registeredAt' => (string)($row['registeredAt'] ?? ''),
+                ];
+            }, $stations),
+            'pastStations' => array_map(static function (array $row): array {
+                return [
+                    'serial' => (string)($row['pk_serialNumber'] ?? ''),
+                    'name' => (string)($row['name'] ?? ''),
+                    'description' => (string)($row['description'] ?? ''),
+                    'registeredAt' => (string)($row['registeredAt'] ?? ''),
+                    'unregisteredAt' => (string)($row['unregisteredAt'] ?? ''),
+                ];
+            }, $pastStations),
+        ],
+    ]);
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
     $isAjax = isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower((string)$_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
@@ -167,9 +202,6 @@ $currentPageUrl = (string)($_SERVER['REQUEST_URI'] ?? '/user/stations.php');
     <div class="d-flex flex-column align-items-end gap-2">
         <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#registerModal">
             <i class="bi bi-plus-circle me-1"></i><?= t('register_station') ?>
-        </button>
-        <button type="button" class="btn btn-outline-secondary" disabled>
-            <i class="bi bi-arrow-left-right me-1"></i>Передать станцию
         </button>
     </div>
 </div>

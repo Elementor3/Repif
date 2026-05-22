@@ -147,7 +147,7 @@ function getChatUploadConfig(): array {
             'application/zip',
             'application/x-zip-compressed',
         ],
-        'max_file_size' => 10 * 1024 * 1024,
+        'max_file_size' => 2 * 1024 * 1024,
         'max_files_per_message' => 5,
     ];
 }
@@ -156,7 +156,7 @@ function getAvatarUploadConfig(): array {
     return [
         'allowed_ext' => ['jpg', 'jpeg', 'png', 'webp', 'avif'],
         'allowed_mimes' => ['image/jpeg', 'image/png', 'image/webp', 'image/avif'],
-        'max_file_size' => 5 * 1024 * 1024,
+        'max_file_size' => 2 * 1024 * 1024,
         'max_width' => 2048,
         'max_height' => 2048,
     ];

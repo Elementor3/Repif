@@ -90,7 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'email' => $email,
                 'password' => $password,
                 'code' => $code,
-                'expires_at' => time() + 600,
+                'expires_at' => time() + 300,
             ];
             $_SESSION['pending_registration'] = $pendingRegistration;
 

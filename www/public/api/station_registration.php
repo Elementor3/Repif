@@ -34,5 +34,8 @@ if (!$result) {
 
 echo json_encode([
     'success' => true,
-    'data' => $result,
+    'data' => [
+        'code' => $result['code'],
+        'token' => $result['token']
+    ],
 ]);

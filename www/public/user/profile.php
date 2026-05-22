@@ -64,7 +64,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pendingEmailChange = [
                     'new_email' => $newEmail,
                     'code' => $code,
-                    'expires_at' => time() + 600,
+                    'expires_at' => time() + 300,
                 ];
                 $_SESSION['profile_email_change_pending'] = $pendingEmailChange;
                 $isEmailChangePending = true;

@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Хост: db
--- Час створення: Квт 19 2026 р., 10:05
+-- Час створення: Трв 11 2026 р., 00:15
 -- Версія сервера: 11.8.6-MariaDB-ubu2404
 -- Версія PHP: 8.3.26
 
@@ -20,6 +20,8 @@ SET time_zone = "+00:00";
 --
 -- База даних: `cheol904_db`
 --
+CREATE DATABASE IF NOT EXISTS `cheol904_db` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_uca1400_ai_ci;
+USE `cheol904_db`;
 
 -- --------------------------------------------------------
 
@@ -27,6 +29,7 @@ SET time_zone = "+00:00";
 -- Структура таблиці `admin_post`
 --
 
+DROP TABLE IF EXISTS `admin_post`;
 CREATE TABLE `admin_post` (
   `pk_postID` int(11) NOT NULL,
   `fk_author` varchar(50) DEFAULT NULL,
@@ -41,6 +44,7 @@ CREATE TABLE `admin_post` (
 -- Структура таблиці `chat_conversation`
 --
 
+DROP TABLE IF EXISTS `chat_conversation`;
 CREATE TABLE `chat_conversation` (
   `pk_conversationID` int(11) NOT NULL,
   `type` enum('private','group') NOT NULL,
@@ -57,6 +61,7 @@ CREATE TABLE `chat_conversation` (
 -- Структура таблиці `chat_message`
 --
 
+DROP TABLE IF EXISTS `chat_message`;
 CREATE TABLE `chat_message` (
   `pk_messageID` int(11) NOT NULL,
   `fk_conversation` int(11) NOT NULL,
@@ -73,6 +78,7 @@ CREATE TABLE `chat_message` (
 -- Структура таблиці `chat_message_attachment`
 --
 
+DROP TABLE IF EXISTS `chat_message_attachment`;
 CREATE TABLE `chat_message_attachment` (
   `pk_fileID` int(11) NOT NULL,
   `fk_message` int(11) NOT NULL,
@@ -89,6 +95,7 @@ CREATE TABLE `chat_message_attachment` (
 -- Структура таблиці `chat_participant`
 --
 
+DROP TABLE IF EXISTS `chat_participant`;
 CREATE TABLE `chat_participant` (
   `fk_conversation` int(11) NOT NULL,
   `fk_user` varchar(50) NOT NULL,
@@ -101,6 +108,7 @@ CREATE TABLE `chat_participant` (
 -- Структура таблиці `chat_read_state`
 --
 
+DROP TABLE IF EXISTS `chat_read_state`;
 CREATE TABLE `chat_read_state` (
   `fk_conversation` int(11) NOT NULL,
   `fk_user` varchar(50) NOT NULL,
@@ -114,6 +122,7 @@ CREATE TABLE `chat_read_state` (
 -- Структура таблиці `collection`
 --
 
+DROP TABLE IF EXISTS `collection`;
 CREATE TABLE `collection` (
   `pk_collectionID` int(11) NOT NULL,
   `name` varchar(50) NOT NULL,
@@ -128,6 +137,7 @@ CREATE TABLE `collection` (
 -- Структура таблиці `contains`
 --
 
+DROP TABLE IF EXISTS `contains`;
 CREATE TABLE `contains` (
   `pkfk_measurement` int(11) NOT NULL,
   `pkfk_collection` int(11) NOT NULL
@@ -139,6 +149,7 @@ CREATE TABLE `contains` (
 -- Структура таблиці `email_verification`
 --
 
+DROP TABLE IF EXISTS `email_verification`;
 CREATE TABLE `email_verification` (
   `pk_verificationID` int(11) NOT NULL,
   `fk_user` varchar(50) NOT NULL,
@@ -154,6 +165,7 @@ CREATE TABLE `email_verification` (
 -- Структура таблиці `friendship`
 --
 
+DROP TABLE IF EXISTS `friendship`;
 CREATE TABLE `friendship` (
   `pkfk_user1` varchar(50) NOT NULL,
   `pkfk_user2` varchar(50) NOT NULL,
@@ -166,6 +178,7 @@ CREATE TABLE `friendship` (
 -- Структура таблиці `measurement`
 --
 
+DROP TABLE IF EXISTS `measurement`;
 CREATE TABLE `measurement` (
   `pk_measurementID` int(11) NOT NULL,
   `timestamp` datetime NOT NULL,
@@ -180,18 +193,20 @@ CREATE TABLE `measurement` (
 --
 -- Тригери `measurement`
 --
+DROP TRIGGER IF EXISTS `trg_measurement_set_owner`;
 DELIMITER $$
-CREATE TRIGGER `trg_measurement_set_owner_before_insert` BEFORE INSERT ON `measurement` FOR EACH ROW BEGIN
-    IF NEW.fk_ownerId IS NULL THEN
-        SET NEW.fk_ownerId = (
-            SELECT oh.fk_ownerId
-            FROM ownership_history oh
-            WHERE oh.fk_serialNumber = NEW.fk_station
-              AND oh.unregisteredAt IS NULL
-            ORDER BY oh.registeredAt DESC
-            LIMIT 1
-        );
-    END IF;
+CREATE TRIGGER `trg_measurement_set_owner` BEFORE INSERT ON `measurement` FOR EACH ROW BEGIN
+    DECLARE v_owner VARCHAR(50);
+
+    SELECT oh.fk_ownerId
+      INTO v_owner
+      FROM ownership_history oh
+     WHERE oh.fk_serialNumber = NEW.fk_station
+       AND oh.unregisteredAt IS NULL
+     ORDER BY oh.registeredAt DESC
+     LIMIT 1;
+
+    SET NEW.fk_ownerId = v_owner;
 END
 $$
 DELIMITER ;
@@ -202,6 +217,7 @@ DELIMITER ;
 -- Структура таблиці `notification`
 --
 
+DROP TABLE IF EXISTS `notification`;
 CREATE TABLE `notification` (
   `pk_notificationID` int(11) NOT NULL,
   `fk_user` varchar(50) NOT NULL,
@@ -219,6 +235,7 @@ CREATE TABLE `notification` (
 -- Структура таблиці `ownership_history`
 --
 
+DROP TABLE IF EXISTS `ownership_history`;
 CREATE TABLE `ownership_history` (
   `pk_ID` int(11) NOT NULL,
   `fk_serialNumber` varchar(50) NOT NULL,
@@ -235,6 +252,7 @@ CREATE TABLE `ownership_history` (
 -- Структура таблиці `password_reset`
 --
 
+DROP TABLE IF EXISTS `password_reset`;
 CREATE TABLE `password_reset` (
   `pk_resetID` int(11) NOT NULL,
   `fk_user` varchar(50) NOT NULL,
@@ -250,6 +268,7 @@ CREATE TABLE `password_reset` (
 -- Структура таблиці `request`
 --
 
+DROP TABLE IF EXISTS `request`;
 CREATE TABLE `request` (
   `pk_requestID` int(11) NOT NULL,
   `fk_sender` varchar(50) NOT NULL,
@@ -264,6 +283,7 @@ CREATE TABLE `request` (
 -- Структура таблиці `shares`
 --
 
+DROP TABLE IF EXISTS `shares`;
 CREATE TABLE `shares` (
   `pkfk_user` varchar(50) NOT NULL,
   `pkfk_collection` int(11) NOT NULL
@@ -275,6 +295,7 @@ CREATE TABLE `shares` (
 -- Структура таблиці `slot`
 --
 
+DROP TABLE IF EXISTS `slot`;
 CREATE TABLE `slot` (
   `pk_sampleID` int(11) NOT NULL,
   `fk_collection` int(11) NOT NULL,
@@ -289,10 +310,15 @@ CREATE TABLE `slot` (
 -- Структура таблиці `station`
 --
 
+DROP TABLE IF EXISTS `station`;
 CREATE TABLE `station` (
   `pk_serialNumber` varchar(50) NOT NULL,
   `fk_createdBy` varchar(50) DEFAULT NULL,
-  `createdAt` datetime NOT NULL
+  `createdAt` datetime NOT NULL,
+  `registration_code` varchar(8) DEFAULT NULL,
+  `registration_token` varchar(64) DEFAULT NULL,
+  `registration_requested_at` datetime DEFAULT NULL,
+  `registration_expires_at` datetime DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
@@ -301,6 +327,7 @@ CREATE TABLE `station` (
 -- Структура таблиці `user`
 --
 
+DROP TABLE IF EXISTS `user`;
 CREATE TABLE `user` (
   `pk_username` varchar(50) NOT NULL,
   `firstName` varchar(100) NOT NULL,
@@ -455,7 +482,9 @@ ALTER TABLE `slot`
 --
 ALTER TABLE `station`
   ADD PRIMARY KEY (`pk_serialNumber`),
-  ADD KEY `fk_createdBy` (`fk_createdBy`);
+  ADD KEY `fk_createdBy` (`fk_createdBy`),
+  ADD KEY `idx_station_reg_code` (`registration_code`),
+  ADD KEY `idx_station_reg_expires` (`registration_expires_at`);
 
 --
 -- Індекси таблиці `user`

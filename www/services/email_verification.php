@@ -36,7 +36,7 @@ function createEmailVerificationToken(mysqli $conn, string $username): ?string {
     ensureEmailVerificationSchema($conn);
 
     $token = bin2hex(random_bytes(32));
-    $expires = date('Y-m-d H:i:s', strtotime('+24 hours'));
+    $expires = date('Y-m-d H:i:s', strtotime('+5 minutes'));
 
     $stmt = $conn->prepare("INSERT INTO email_verification (fk_user, token, expiresAt) VALUES (?,?,?)");
     $stmt->bind_param('sss', $username, $token, $expires);
