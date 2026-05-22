@@ -222,6 +222,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $isAjaxRequest) {
         'email_change_notice' => $emailChangeNotice,
         'pending_email_change' => is_array($_SESSION['profile_email_change_pending'] ?? null),
         'pending_email_expires_at' => (int)(($_SESSION['profile_email_change_pending']['expires_at'] ?? 0)),
+        'email' => (string)($user['email'] ?? ''),
         'avatar' => $currentUserAvatar,
         'avatar_url' => getAvatarUrl($currentUserAvatar, $username),
         'full_name' => trim(((string)($user['firstName'] ?? '')) . ' ' . ((string)($user['lastName'] ?? ''))),
@@ -324,7 +325,7 @@ require_once __DIR__ . '/../../includes/header.php';
             <div class="card-body">
                 <div class="mb-3">
                     <label class="form-label"><?= t('email') ?></label>
-                    <input type="email" class="form-control" value="<?= e($user['email'] ?? '') ?>" readonly>
+                    <input type="email" class="form-control" value="<?= e($user['email'] ?? '') ?>" readonly id="profileCurrentEmail">
                 </div>
                 <form method="post" class="mb-3" id="startEmailChangeForm">
                     <input type="hidden" name="action" value="start_email_change">

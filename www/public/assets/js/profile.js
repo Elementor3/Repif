@@ -6,10 +6,10 @@
     }
 
     function showProfileFlash(type, message) {
-        if (type !== 'error') return;
         var box = document.getElementById('profileFlashContainer');
         if (!box || !message) return;
-        var html = '<div class="alert alert-danger alert-dismissible fade show auto-dismiss" role="alert">'
+        var alertType = type === 'success' ? 'success' : 'danger';
+        var html = '<div class="alert alert-' + alertType + ' alert-dismissible fade show auto-dismiss" role="alert">'
             + escHtml(message)
             + '<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
         box.innerHTML = html;
@@ -69,6 +69,9 @@
                 if (!data || !data.success) {
                     showProfileFlash('error', (data && data.message) ? data.message : 'Error');
                     return;
+                }
+                if (data.message) {
+                    showProfileFlash('success', data.message);
                 }
                 if (typeof onSuccess === 'function') onSuccess(data);
             })
@@ -232,6 +235,18 @@
                 submitProfileForm(emailChangePendingBox, function (data) {
                     if (!data.pending_email_change) {
                         emailChangePendingBox.classList.add('d-none');
+                    }
+                    var emailInput = document.getElementById('profileCurrentEmail');
+                    if (emailInput && data.email) {
+                        emailInput.value = data.email;
+                    }
+                    var newEmailInput = document.querySelector('#startEmailChangeForm input[name="new_email"]');
+                    if (newEmailInput) {
+                        newEmailInput.value = '';
+                    }
+                    var codeInput = emailChangePendingBox.querySelector('input[name="email_change_code"]');
+                    if (codeInput) {
+                        codeInput.value = '';
                     }
                 });
             });
