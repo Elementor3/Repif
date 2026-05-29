@@ -169,7 +169,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             </div>
                             <div class="d-grid gap-2">
                                 <button type="submit" name="action" value="confirm_registration_code" class="btn btn-primary"><?= t('register') ?></button>
-                                <button type="submit" name="action" value="cancel_registration_code" class="btn btn-outline-secondary"><?= t('cancel') ?></button>
+                                <button type="submit" name="action" value="cancel_registration_code" class="btn btn-outline-secondary" formnovalidate><?= t('cancel') ?></button>
                             </div>
                         <?php else: ?>
                             <div class="row">
