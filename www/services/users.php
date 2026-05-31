@@ -276,6 +276,54 @@ function adminDeleteUser(mysqli $conn, string $username): bool {
     }
     notifyUserLeftAllGroups($conn, $username, $displayName !== '' ? $displayName : $username);
 
+    $stmt = $conn->prepare("UPDATE ownership_history SET unregisteredAt = NOW() WHERE fk_ownerId = ? AND unregisteredAt IS NULL");
+    $stmt->bind_param("s", $username);
+    $stmt->execute();
+
+    $stmt = $conn->prepare("UPDATE measurement SET fk_ownerId = NULL WHERE fk_ownerId = ?");
+    $stmt->bind_param("s", $username);
+    $stmt->execute();
+
+    $stmt = $conn->prepare("DELETE ct FROM contains ct JOIN collection c ON ct.pkfk_collection = c.pk_collectionID WHERE c.fk_user = ?");
+    $stmt->bind_param("s", $username);
+    $stmt->execute();
+
+    $stmt = $conn->prepare("DELETE sl FROM slot sl JOIN collection c ON sl.fk_collection = c.pk_collectionID WHERE c.fk_user = ?");
+    $stmt->bind_param("s", $username);
+    $stmt->execute();
+
+    $stmt = $conn->prepare("DELETE sh FROM shares sh JOIN collection c ON sh.pkfk_collection = c.pk_collectionID WHERE c.fk_user = ?");
+    $stmt->bind_param("s", $username);
+    $stmt->execute();
+
+    $stmt = $conn->prepare("DELETE FROM collection WHERE fk_user = ?");
+    $stmt->bind_param("s", $username);
+    $stmt->execute();
+
+    $stmt = $conn->prepare("DELETE FROM shares WHERE pkfk_user = ?");
+    $stmt->bind_param("s", $username);
+    $stmt->execute();
+
+    $stmt = $conn->prepare("DELETE FROM friendship WHERE pkfk_user1 = ? OR pkfk_user2 = ?");
+    $stmt->bind_param("ss", $username, $username);
+    $stmt->execute();
+
+    $stmt = $conn->prepare("DELETE FROM request WHERE fk_sender = ? OR fk_receiver = ?");
+    $stmt->bind_param("ss", $username, $username);
+    $stmt->execute();
+
+    $stmt = $conn->prepare("DELETE FROM notification WHERE fk_user = ?");
+    $stmt->bind_param("s", $username);
+    $stmt->execute();
+
+    $stmt = $conn->prepare("DELETE FROM email_verification WHERE fk_user = ?");
+    $stmt->bind_param("s", $username);
+    $stmt->execute();
+
+    $stmt = $conn->prepare("DELETE FROM password_reset WHERE fk_user = ?");
+    $stmt->bind_param("s", $username);
+    $stmt->execute();
+
     $stmt = $conn->prepare("DELETE FROM user WHERE pk_username=?");
     $stmt->bind_param("s", $username);
     return $stmt->execute();

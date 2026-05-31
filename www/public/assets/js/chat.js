@@ -922,16 +922,12 @@
 								alert(res.errors.join('\n'));
 							}
 						} else {
-							chatSelectedFiles = chatSelectedFiles.concat(files);
-							renderAttachmentPreview();
 							if (res && res.message) {
 								alert(res.message);
 							}
 						}
 					},
 					error: function (xhr) {
-						chatSelectedFiles = chatSelectedFiles.concat(files);
-						renderAttachmentPreview();
 						var msg = chatErrorText;
 						if (xhr && xhr.responseJSON && xhr.responseJSON.message) {
 							msg = xhr.responseJSON.message;
